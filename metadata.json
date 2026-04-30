@@ -1,0 +1,5 @@
+{
+  "name": "Gesporte - Gestão Esportiva",
+  "description": "Sistema completo para gestão de alunos, turmas, frequências e equipamentos esportivos.",
+  "requestFramePermissions": ["camera"]
+}

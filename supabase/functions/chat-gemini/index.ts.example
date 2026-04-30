@@ -1,0 +1,61 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+
+// Configuração de CORS para permitir que seu frontend chame a função
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+serve(async (req) => {
+  // Lidar com requisição preflight do CORS
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
+  try {
+    const { prompt } = await req.json()
+    const geminiApiKey = Deno.env.get('GEMINI_API_KEY')
+
+    if (!geminiApiKey) {
+      throw new Error('GEMINI_API_KEY is not set in Supabase Secrets')
+    }
+
+    // Fazer a chamada para a API do Gemini
+    const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [{ 
+          role: "user",
+          parts: [{ text: prompt }] 
+        }],
+        system_instruction: {
+          parts: [{ text: "Você é um assistente especializado no sistema GEsporte SeMEsp. Seja conciso e profissional em português brasileiro." }]
+        }
+      }),
+    });
+
+    const data = await geminiResponse.json()
+    
+    if (data.error) {
+      throw new Error(data.error.message || 'Error from Gemini API')
+    }
+
+    const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Sem resposta da IA."
+
+    // Retornar a resposta para o frontend
+    return new Response(JSON.stringify({ response: aiText }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200,
+    })
+
+  } catch (error: any) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 400,
+    })
+  }
+})

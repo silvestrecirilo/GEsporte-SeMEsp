@@ -173,23 +173,28 @@ drop policy if exists "Autenticados podem ler tudo" on public.frequencia;
 -- Create Granular Policies for Authenticated Staff
 -- Note: In a production app, you might want to differentiate between 'admin' and 'professor' roles.
 
--- 1. Funcionários/Professores/Equipamentos/Modalidades (Leitura para todos autenticados, Escrita para Admins)
-create policy "Staff autenticado pode ver funcionarios" on public.funcionarios for select to authenticated using (true);
-create policy "Staff autenticado pode ver professores" on public.professores for select to authenticated using (true);
-create policy "Staff autenticado pode ver equipamentos" on public.equipamentos for select to authenticated using (true);
-create policy "Staff autenticado pode ver modalidades" on public.modalidades for select to authenticated using (true);
+-- 1. Funcionários/Professores/Equipamentos/Modalidades (Leitura para todos, Escrita para todos)
+create policy "Public access can see funcionarios" on public.funcionarios for select using (true);
+create policy "Public access can see professores" on public.professores for select using (true);
+create policy "Public access can see equipamentos" on public.equipamentos for select using (true);
+create policy "Public access can see modalidades" on public.modalidades for select using (true);
 
--- 2. Turmas (CRUD para staff autenticado)
-create policy "Staff autenticado pode gerenciar turmas" on public.turmas for all to authenticated using (true);
+create policy "Public access can write funcionarios" on public.funcionarios for all using (true);
+create policy "Public access can write professores" on public.professores for all using (true);
+create policy "Public access can write equipamentos" on public.equipamentos for all using (true);
+create policy "Public access can write modalidades" on public.modalidades for all using (true);
 
--- 3. Alunos (CRUD para staff autenticado)
-create policy "Staff autenticado pode gerenciar alunos" on public.alunos for all to authenticated using (true);
+-- 2. Turmas (CRUD para todos)
+create policy "Public access can manage turmas" on public.turmas for all using (true);
 
--- 4. Matriculas (CRUD para staff autenticado)
-create policy "Staff autenticado pode gerenciar matriculas" on public.matriculas for all to authenticated using (true);
+-- 3. Alunos (CRUD para todos)
+create policy "Public access can manage alunos" on public.alunos for all using (true);
 
--- 5. Frequencia (CRUD para staff autenticado)
-create policy "Staff autenticado pode gerenciar frequencia" on public.frequencia for all to authenticated using (true);
+-- 4. Matriculas (CRUD para todos)
+create policy "Public access can manage matriculas" on public.matriculas for all using (true);
+
+-- 5. Frequencia (CRUD para todos)
+create policy "Public access can manage frequencia" on public.frequencia for all using (true);
 
 -- 6. AI Logs (to store chat history)
 create table public.ai_logs (

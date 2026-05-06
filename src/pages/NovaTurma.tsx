@@ -6,6 +6,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Save, ArrowLeft, Calendar, Clock, MapPin, Users } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { useNotification } from '../components/Notification';
 
 const turmaSchema = z.object({
   codigo: z.string().min(1, 'Código é obrigatório').max(20, 'Código muito longo'),
@@ -41,6 +42,7 @@ const DURRACOES = [
 export default function NovaTurma() {
   const navigate = useNavigate();
   const { id } = useParams();
+  const { showNotification } = useNotification();
   const [isLoading, setIsLoading] = useState(false);
   
   const {
@@ -209,10 +211,11 @@ export default function NovaTurma() {
         }
       }
       
+      showNotification('success', id ? 'Turma atualizada com sucesso!' : 'Turma cadastrada com sucesso!');
       navigate('/turmas');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao salvar:', error);
-      alert('Erro ao salvar os dados.');
+      showNotification('error', 'Erro ao salvar os dados', error.message || 'Houve um problema ao conectar com o banco de dados.');
     }
   };
 

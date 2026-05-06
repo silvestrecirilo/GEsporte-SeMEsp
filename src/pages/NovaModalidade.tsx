@@ -6,6 +6,7 @@ import { Save, ArrowLeft, Activity } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
+import { useNotification } from '../components/Notification';
 
 const modalidadeSchema = z.object({
   nome: z.string().min(3, 'Nome da modalidade é obrigatório'),
@@ -17,6 +18,7 @@ type ModalidadeFormData = z.infer<typeof modalidadeSchema>;
 export default function NovaModalidade() {
   const navigate = useNavigate();
   const { id } = useParams();
+  const { showNotification } = useNotification();
   const isEditing = Boolean(id);
   
   const {
@@ -69,10 +71,11 @@ export default function NovaModalidade() {
         if (error) throw error;
       }
       
+      showNotification('success', isEditing ? 'Modalidade atualizada com sucesso!' : 'Modalidade cadastrada com sucesso!');
       navigate('/modalidades');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao salvar:', error);
-      alert('Erro ao salvar modalidade.');
+      showNotification('error', 'Erro ao salvar modalidade', error.message || 'Houve um problema ao conectar com o banco de dados.');
     }
   };
 

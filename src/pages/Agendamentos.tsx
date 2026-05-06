@@ -1,8 +1,10 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { supabase } from '../lib/supabase';
 import { Calendar, MapPin, Clock, Filter, ChevronLeft, ChevronRight, Activity, Plus, X, AlertCircle } from 'lucide-react';
+import { useNotification } from '../components/Notification';
 
 export default function Agendamentos() {
+  const { showNotification } = useNotification();
   const [loading, setLoading] = useState(true);
   const [turmas, setTurmas] = useState<any[]>([]);
   const [equipamentos, setEquipamentos] = useState<any[]>([]);
@@ -62,7 +64,7 @@ export default function Agendamentos() {
     e.preventDefault();
 
     if (newActivity.horario_fim <= newActivity.horario_inicio) {
-      alert('O horário de fim deve ser posterior ao horário de início.');
+      showNotification('warning', 'Horário inválido', 'O horário de fim deve ser posterior ao horário de início.');
       return;
     }
 
@@ -92,13 +94,14 @@ export default function Agendamentos() {
 
     if (conflictWithTurma || conflictWithExterna) {
       const conflictName = conflictWithTurma ? `Turma: ${conflictWithTurma.modalidades?.nome}` : `Atividade: ${conflictWithExterna?.titulo}`;
-      alert(`Conflito de horário! Já existe uma atividade agendada neste local, dia e horário: ${conflictName}`);
+      showNotification('error', 'Conflito de horário', `Já existe uma atividade agendada neste local, dia e horário: ${conflictName}`);
       return;
     }
 
     try {
       const { error } = await supabase.from('atividades_externas').insert([newActivity]);
       if (error) throw error;
+      showNotification('success', 'Atividade criada com sucesso!');
       setShowModal(false);
       setNewActivity({
         titulo: '',
@@ -112,9 +115,9 @@ export default function Agendamentos() {
         descricao: ''
       });
       fetchData();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao criar atividade:', error);
-      alert('Erro ao criar atividade externa.');
+      showNotification('error', 'Erro ao criar atividade', error.message || 'Houve um problema ao conectar com o banco de dados.');
     }
   };
 

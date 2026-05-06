@@ -6,6 +6,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Save, ArrowLeft, Upload, Camera, RefreshCw } from 'lucide-react';
 import Webcam from 'react-webcam';
 import { supabase } from '../lib/supabase';
+import { useNotification } from '../components/Notification';
 
 const parQSchema = z.object({
   q1: z.string(),
@@ -51,6 +52,7 @@ type AlunoFormData = z.infer<typeof alunoSchema>;
 export default function NovoAluno() {
   const navigate = useNavigate();
   const { id } = useParams();
+  const { showNotification } = useNotification();
   const [fotoUrl, setFotoUrl] = useState<string | null>(null);
   const [showCamera, setShowCamera] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -113,8 +115,9 @@ export default function NovoAluno() {
             if (aluno.foto_url) setFotoUrl(aluno.foto_url);
           }
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Erro ao buscar dados:', error);
+        showNotification('error', 'Erro ao carregar dados', 'Não foi possível carregar as informações do formulário.');
       } finally {
         setIsLoading(false);
       }
@@ -184,10 +187,11 @@ export default function NovoAluno() {
         if (mError) throw mError;
       }
       
+      showNotification('success', id ? 'Aluno atualizado com sucesso!' : 'Aluno cadastrado com sucesso!');
       navigate('/alunos');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao salvar:', error);
-      alert('Erro ao salvar os dados.');
+      showNotification('error', 'Erro ao salvar os dados', error.message || 'Houve um problema ao conectar com o banco de dados.');
     }
   };
 

@@ -2,6 +2,7 @@ import { useState, ChangeEvent, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Save, Calendar as CalendarIcon, CheckCircle, XCircle, AlertCircle, Ban } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useNotification } from '../components/Notification';
 
 // Tipos baseados no schema SQL
 type StatusAula = 'presente' | 'falta' | 'falta_justificada' | 'aula_cancelada' | 'pendente';
@@ -26,6 +27,7 @@ interface TurmaInfo {
 export default function Frequencia() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { showNotification } = useNotification();
   
   // Estado para a data selecionada
   const [dataAula, setDataAula] = useState('');
@@ -210,10 +212,10 @@ export default function Frequencia() {
 
       if (error) throw error;
 
-      alert('Frequência salva com sucesso!');
-    } catch (error) {
+      showNotification('success', 'Frequência salva com sucesso!');
+    } catch (error: any) {
       console.error('Erro ao salvar frequência:', error);
-      alert('Erro ao salvar frequência.');
+      showNotification('error', 'Erro ao salvar frequência', error.message || 'Houve um problema ao conectar com o banco de dados.');
     } finally {
       setIsSubmitting(false);
     }

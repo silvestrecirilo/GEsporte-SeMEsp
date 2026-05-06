@@ -6,6 +6,7 @@ import { Save, ArrowLeft, User, Briefcase, Phone, Mail, MapPin } from 'lucide-re
 import { supabase } from '../lib/supabase';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
+import { useNotification } from '../components/Notification';
 
 const funcionarioSchema = z.object({
   nome: z.string().min(3, 'Nome é obrigatório'),
@@ -14,8 +15,6 @@ const funcionarioSchema = z.object({
   }),
   email: z.string().email('Email inválido').optional().or(z.literal('')),
   telefone: z.string().min(10, 'Telefone inválido'),
-  bairro: z.string().optional(),
-  endereco: z.string().optional(),
   permissoes: z.array(z.string()),
 });
 
@@ -35,6 +34,7 @@ type FuncionarioFormData = z.infer<typeof funcionarioSchema>;
 export default function NovoFuncionario() {
   const navigate = useNavigate();
   const { id } = useParams();
+  const { showNotification } = useNotification();
   const isEditing = Boolean(id);
   
   const {
@@ -67,8 +67,6 @@ export default function NovoFuncionario() {
         cargo: funcionario.cargo as 'Professor' | 'Administrativo',
         email: funcionario.email || '',
         telefone: funcionario.telefone || '',
-        bairro: funcionario.bairro || '',
-        endereco: funcionario.endereco || '',
         permissoes: funcionario.permissoes || [],
       });
     }
@@ -84,8 +82,6 @@ export default function NovoFuncionario() {
             cargo: data.cargo,
             email: data.email,
             telefone: data.telefone,
-            bairro: data.bairro,
-            endereco: data.endereco,
             permissoes: data.permissoes,
           })
           .eq('id', id);
@@ -97,18 +93,17 @@ export default function NovoFuncionario() {
           cargo: data.cargo,
           email: data.email,
           telefone: data.telefone,
-          bairro: data.bairro,
-          endereco: data.endereco,
           permissoes: data.permissoes,
         }]);
         
         if (error) throw error;
       }
       
+      showNotification('success', isEditing ? 'Funcionário atualizado com sucesso!' : 'Funcionário cadastrado com sucesso!');
       navigate('/funcionarios');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao salvar:', error);
-      alert('Erro ao salvar funcionário.');
+      showNotification('error', 'Erro ao salvar funcionário', error.message || 'Houve um problema ao conectar com o banco de dados.');
     }
   };
 
@@ -186,30 +181,6 @@ export default function NovoFuncionario() {
                 <Mail className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" />
               </div>
               {errors.email && <p className="text-red-500 text-xs">{errors.email.message}</p>}
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Bairro</label>
-              <div className="relative">
-                <input 
-                  {...register('bairro')} 
-                  placeholder="Bairro onde reside"
-                  className="w-full pl-10 pr-3 py-2 border rounded-md focus:ring-emerald-500 focus:border-emerald-500" 
-                />
-                <MapPin className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" />
-              </div>
-            </div>
-
-            <div className="space-y-2 md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700">Endereço Completo</label>
-              <div className="relative">
-                <input 
-                  {...register('endereco')} 
-                  placeholder="Rua, número, complemento"
-                  className="w-full pl-10 pr-3 py-2 border rounded-md focus:ring-emerald-500 focus:border-emerald-500" 
-                />
-                <MapPin className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" />
-              </div>
             </div>
           </div>
         </div>

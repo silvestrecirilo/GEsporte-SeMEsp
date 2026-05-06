@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Save, ArrowLeft, GraduationCap, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useNotification } from '../components/Notification';
 
 export default function MatriculaAluno() {
   const navigate = useNavigate();
   const { id } = useParams();
+  const { showNotification } = useNotification();
   const [aluno, setAluno] = useState<any>(null);
   const [availableTurmas, setAvailableTurmas] = useState<any[]>([]);
   const [selectedTurmas, setSelectedTurmas] = useState<string[]>([]);
@@ -74,10 +76,11 @@ export default function MatriculaAluno() {
         if (error) throw error;
       }
       
+      showNotification('success', 'Matrículas atualizadas com sucesso!');
       navigate('/alunos');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao salvar matrícula:', error);
-      alert('Erro ao salvar as matrículas.');
+      showNotification('error', 'Erro ao salvar matrícula', error.message || 'Houve um problema ao conectar com o banco de dados.');
     } finally {
       setIsSaving(false);
     }

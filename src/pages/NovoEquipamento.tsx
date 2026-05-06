@@ -5,6 +5,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Save, ArrowLeft, MapPin } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useState, useEffect } from 'react';
+import { useNotification } from '../components/Notification';
 
 const equipamentoSchema = z.object({
   tipo: z.string().min(3, 'Tipo de equipamento é obrigatório'),
@@ -19,6 +20,7 @@ type EquipamentoFormData = z.infer<typeof equipamentoSchema>;
 export default function NovoEquipamento() {
   const navigate = useNavigate();
   const { id } = useParams();
+  const { showNotification } = useNotification();
   const [isLoading, setIsLoading] = useState(false);
   
   const {
@@ -83,10 +85,11 @@ export default function NovoEquipamento() {
         if (error) throw error;
       }
       
+      showNotification('success', id ? 'Equipamento atualizado com sucesso!' : 'Equipamento cadastrado com sucesso!');
       navigate('/equipamentos');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao salvar:', error);
-      alert('Erro ao salvar os dados.');
+      showNotification('error', 'Erro ao salvar os dados', error.message || 'Houve um problema ao conectar com o banco de dados.');
     }
   };
 

@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Search, Trash2, BookOpen } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useNotification } from '../components/Notification';
 
 export default function Matriculas() {
   const [matriculas, setMatriculas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const { showNotification } = useNotification();
 
   useEffect(() => {
     fetchMatriculas();
@@ -48,9 +50,10 @@ export default function Matriculas() {
       const { error } = await supabase.from('matriculas').delete().eq('id', id);
       if (error) throw error;
       setMatriculas(matriculas.filter(m => m.id !== id));
-    } catch (error) {
+      showNotification('success', 'Matrícula excluída com sucesso!');
+    } catch (error: any) {
       console.error('Erro ao excluir matrícula:', error);
-      alert('Erro ao excluir matrícula.');
+      showNotification('error', 'Erro ao excluir matrícula', error.message || 'Houve um problema ao conectar com o banco de dados.');
     }
   }
 

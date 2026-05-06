@@ -25,6 +25,7 @@ import Agendamentos from './pages/Agendamentos';
 import { useEffect, useState } from 'react';
 import { supabase } from './lib/supabase';
 import { Session } from '@supabase/supabase-js';
+import { NotificationProvider } from './components/Notification';
 
 const queryClient = new QueryClient();
 
@@ -70,7 +71,8 @@ export default function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <Router>
+      <NotificationProvider>
+        <Router>
         {showConfigWarning && (
           <div className="fixed top-0 left-0 right-0 bg-amber-500 text-white text-center py-1 text-xs z-[9999] shadow-sm font-medium">
             Project not fully configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your secrets.
@@ -108,6 +110,7 @@ export default function App() {
           </Route>
         </Routes>
       </Router>
-    </QueryClientProvider>
-  );
+    </NotificationProvider>
+  </QueryClientProvider>
+);
 }

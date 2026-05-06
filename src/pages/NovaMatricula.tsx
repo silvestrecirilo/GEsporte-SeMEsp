@@ -2,9 +2,11 @@ import { useState, useEffect, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Save } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useNotification } from '../components/Notification';
 
 export default function NovaMatricula() {
   const navigate = useNavigate();
+  const { showNotification } = useNotification();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [alunos, setAlunos] = useState<any[]>([]);
   const [turmas, setTurmas] = useState<any[]>([]);
@@ -51,17 +53,18 @@ export default function NovaMatricula() {
       const { error } = await supabase.from('matriculas').insert([formData]);
       if (error) {
         if (error.code === '23505') { // Unique violation
-          alert('Este aluno já está matriculado nesta turma.');
+          showNotification('warning', 'Duplicidade', 'Este aluno já está matriculado nesta turma.');
         } else {
           throw error;
         }
         return;
       }
       
+      showNotification('success', 'Matrícula realizada com sucesso!');
       navigate('/matriculas');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao matricular aluno:', error);
-      alert('Erro ao matricular aluno. Tente novamente.');
+      showNotification('error', 'Erro ao matricular aluno', error.message || 'Houve um problema ao conectar com o banco de dados.');
     } finally {
       setIsSubmitting(false);
     }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Users, Activity, MapPin, Calendar, TrendingUp } from 'lucide-react';
+import { useNotification } from '../components/Notification';
 import {
   BarChart,
   Bar,
@@ -14,6 +15,7 @@ import {
 import { supabase } from '../lib/supabase';
 
 export default function Dashboard() {
+  const { showNotification } = useNotification();
   const [stats, setStats] = useState({
     totalAlunos: 0,
     turmasAtivas: 0,
@@ -177,8 +179,9 @@ export default function Dashboard() {
           ]);
         }
 
-      } catch (error) {
+      } catch (error: any) {
         console.error('Erro ao buscar dados do dashboard:', error);
+        showNotification('error', 'Erro ao carregar dashboard', 'Houve um problema ao buscar as estatísticas.');
       } finally {
         setLoading(false);
       }

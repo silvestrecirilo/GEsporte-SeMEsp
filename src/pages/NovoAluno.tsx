@@ -24,7 +24,7 @@ const alunoSchema = z.object({
   endereco: z.string().min(5, 'Endereço é obrigatório'),
   complemento: z.string().optional(),
   bairro: z.string().min(2, 'Bairro é obrigatório'),
-  telefone: z.string().min(10, 'Telefone inválido'),
+  telefone: z.string().optional().or(z.literal('')),
   email: z.string().email('E-mail inválido').optional().or(z.literal('')),
   dataNascimento: z.string().min(10, 'Data de nascimento é obrigatória'),
   parQ: parQSchema,
@@ -146,7 +146,7 @@ export default function NovoAluno() {
         endereco: data.endereco,
         complemento: data.complemento,
         bairro: data.bairro,
-        telefone_responsavel: data.telefone,
+        telefone_responsavel: data.telefone || null,
         email: data.email || null,
         foto_url: fotoUrl,
       };
@@ -320,7 +320,7 @@ export default function NovoAluno() {
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Telefone</label>
+              <label className="block text-sm font-medium text-gray-700">Telefone (Opcional)</label>
               <input {...register('telefone')} className="w-full px-3 py-2 border rounded-md focus:ring-emerald-500 focus:border-emerald-500" />
               {errors.telefone && <p className="text-red-500 text-xs">{errors.telefone.message}</p>}
             </div>

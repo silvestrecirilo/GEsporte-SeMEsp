@@ -258,3 +258,10 @@ create policy "Apenas autenticados podem enviar fotos"
   on storage.objects for insert
   to authenticated
   with check ( bucket_id = 'fotos_alunos' );
+
+-- Ensure NULL ability for email and telefone
+alter table public.funcionarios alter column email drop not null;
+alter table public.funcionarios alter column telefone drop not null;
+alter table public.professores alter column email drop not null;
+alter table public.alunos alter column email drop not null;
+alter table public.alunos alter column telefone drop not null;

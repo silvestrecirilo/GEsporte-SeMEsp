@@ -14,7 +14,7 @@ const funcionarioSchema = z.object({
     message: 'Selecione um cargo válido',
   }),
   email: z.string().email('Email inválido').optional().or(z.literal('')),
-  telefone: z.string().min(10, 'Telefone inválido'),
+  telefone: z.string().optional().or(z.literal('')),
   permissoes: z.array(z.string()),
 });
 
@@ -81,7 +81,7 @@ export default function NovoFuncionario() {
             nome: data.nome,
             cargo: data.cargo,
             email: data.email || null,
-            telefone: data.telefone,
+            telefone: data.telefone || null,
             permissoes: data.permissoes,
           })
           .eq('id', id);
@@ -92,7 +92,7 @@ export default function NovoFuncionario() {
           nome: data.nome,
           cargo: data.cargo,
           email: data.email || null,
-          telefone: data.telefone,
+          telefone: data.telefone || null,
           permissoes: data.permissoes,
         }]);
         
@@ -168,7 +168,7 @@ export default function NovoFuncionario() {
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Telefone</label>
+              <label className="block text-sm font-medium text-gray-700">Telefone (Opcional)</label>
               <div className="relative">
                 <input 
                   {...register('telefone')} 

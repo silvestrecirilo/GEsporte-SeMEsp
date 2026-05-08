@@ -80,7 +80,7 @@ export default function NovoFuncionario() {
           .update({
             nome: data.nome,
             cargo: data.cargo,
-            email: data.email,
+            email: data.email || null,
             telefone: data.telefone,
             permissoes: data.permissoes,
           })
@@ -91,7 +91,7 @@ export default function NovoFuncionario() {
         const { error } = await supabase.from('funcionarios').insert([{
           nome: data.nome,
           cargo: data.cargo,
-          email: data.email,
+          email: data.email || null,
           telefone: data.telefone,
           permissoes: data.permissoes,
         }]);
@@ -103,7 +103,17 @@ export default function NovoFuncionario() {
       navigate('/funcionarios');
     } catch (error: any) {
       console.error('Erro ao salvar:', error);
-      showNotification('error', 'Erro ao salvar funcionário', error.message || 'Houve um problema ao conectar com o banco de dados.');
+      let errorMessage = error.message || 'Houve um problema ao conectar com o banco de dados.';
+      
+      if (error.code === '23505') {
+        if (error.message.includes('email')) {
+          errorMessage = 'Este e-mail já está cadastrado para outro funcionário.';
+        } else {
+          errorMessage = 'Já existe um registro com estes dados únicos no sistema.';
+        }
+      }
+
+      showNotification('error', 'Erro ao salvar funcionário', errorMessage);
     }
   };
 

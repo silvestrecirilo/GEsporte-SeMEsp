@@ -48,9 +48,11 @@ export default function Funcionarios() {
   };
 
   const { data: turmas } = useQuery({
-    queryKey: ['turmas'],
+    queryKey: ['turmas-with-auxiliares'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('turmas').select('*, modalidades(nome)');
+      const { data, error } = await supabase
+        .from('turmas')
+        .select('*, modalidades(nome), turmas_auxiliares(funcionario_id)');
       if (error) throw error;
       return data;
     }
@@ -61,7 +63,7 @@ export default function Funcionarios() {
     
     const professorTurmas = turmas.filter(t => 
       t.professor_id === funcionarioId || 
-      (t.auxiliares_ids && t.auxiliares_ids.includes(funcionarioId))
+      (t.turmas_auxiliares && t.turmas_auxiliares.some((aux: any) => aux.funcionario_id === funcionarioId))
     );
 
     let totalMinutes = 0;
@@ -77,7 +79,7 @@ export default function Funcionarios() {
     return {
       count: professorTurmas.length,
       hours: Math.round((totalMinutes / 60) * 10) / 10,
-      list: professorTurmas.map(t => `${t.modalidades?.nome} (${t.nome})`)
+      list: professorTurmas.map(t => `${t.modalidades?.nome} (${t.codigo || 'S/C'})`)
     };
   };
 

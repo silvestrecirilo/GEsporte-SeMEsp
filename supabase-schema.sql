@@ -2,30 +2,28 @@
 create extension if not exists "uuid-ossp";
 
 -- 1. Funcionários
-create table public.funcionarios (
+create table if not exists public.funcionarios (
   id uuid default uuid_generate_v4() primary key,
   nome text not null,
-  email text not null unique,
+  email text unique,
   cargo text not null, -- Ex: Professor, Administrativo
   telefone text,
-  bairro text,
-  endereco text,
   permissoes text[] default '{}', -- Lista de permissões (ex: ['dashboard', 'alunos'])
   role text not null default 'funcionario' check (role in ('admin', 'funcionario', 'professor')),
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
 -- 2. Professores
-create table public.professores (
+create table if not exists public.professores (
   id uuid default uuid_generate_v4() primary key,
   nome text not null,
-  email text not null unique,
+  email text unique,
   carga_horaria_semanal integer default 0,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
 -- 3. Equipamentos Esportivos
-create table public.equipamentos (
+create table if not exists public.equipamentos (
   id uuid default uuid_generate_v4() primary key,
   bairro text not null,
   tipo text not null,
@@ -36,29 +34,29 @@ create table public.equipamentos (
 );
 
 -- 4. Modalidades
-create table public.modalidades (
+create table if not exists public.modalidades (
   id uuid default uuid_generate_v4() primary key,
   nome text not null unique,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
 -- 5. Turmas
-create table public.turmas (
+create table if not exists public.turmas (
   id uuid default uuid_generate_v4() primary key,
   codigo text unique, -- Identificação alfanumérica
-  modalidade_id uuid references public.modalidades(id) not null,
+  modalidade_id uuid references public.modalidades(id) on delete cascade not null,
   bairro text not null,
-  equipamento_id uuid references public.equipamentos(id) not null,
+  equipamento_id uuid references public.equipamentos(id) on delete cascade not null,
   dias_semana text[] not null, -- ex: ['Segunda', 'Quarta']
   hora_inicio time not null,
   hora_fim time not null,
-  professor_id uuid references public.professores(id) not null,
-  professor_auxiliar_id uuid references public.professores(id),
+  professor_id uuid references public.professores(id) on delete cascade not null,
+  professor_auxiliar_id uuid references public.professores(id) on delete set null,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
 -- 6. Alunos
-create table public.alunos (
+create table if not exists public.alunos (
   id uuid default uuid_generate_v4() primary key,
   matricula text unique not null, -- ESPxxxxxx
   nome text not null,
@@ -67,7 +65,7 @@ create table public.alunos (
   complemento text,
   bairro text not null,
   telefone text not null,
-  email text not null,
+  email text,
   data_nascimento date not null,
   -- PAR-Q
   par_q_1 boolean default false,
@@ -84,23 +82,32 @@ create table public.alunos (
 );
 
 -- 7. Matrículas (Relacionamento Aluno <-> Turma)
-create table public.matriculas (
+create table if not exists public.matriculas (
   id uuid default uuid_generate_v4() primary key,
-  aluno_id uuid references public.alunos(id) not null,
-  turma_id uuid references public.turmas(id) not null,
+  aluno_id uuid references public.alunos(id) on delete cascade not null,
+  turma_id uuid references public.turmas(id) on delete cascade not null,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   unique(aluno_id, turma_id)
 );
 
 -- 8. Frequência
-create table public.frequencia (
+create table if not exists public.frequencia (
   id uuid default uuid_generate_v4() primary key,
-  aluno_id uuid references public.alunos(id) not null,
-  turma_id uuid references public.turmas(id) not null,
+  aluno_id uuid references public.alunos(id) on delete cascade not null,
+  turma_id uuid references public.turmas(id) on delete cascade not null,
   data_aula date not null,
   status_aula text not null check (status_aula in ('presente', 'falta', 'falta_justificada', 'aula_cancelada')),
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   unique(aluno_id, turma_id, data_aula)
+);
+
+-- 9. Professores Auxiliares (Relacionamento Turma <-> Funcionário)
+create table if not exists public.turmas_auxiliares (
+  id uuid default uuid_generate_v4() primary key,
+  turma_id uuid references public.turmas(id) on delete cascade not null,
+  funcionario_id uuid references public.funcionarios(id) on delete cascade not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  unique(turma_id, funcionario_id)
 );
 
 -- Function: Gerar Ficha de Presença
@@ -164,15 +171,29 @@ alter table public.turmas enable row level security;
 alter table public.alunos enable row level security;
 alter table public.matriculas enable row level security;
 alter table public.frequencia enable row level security;
+alter table public.turmas_auxiliares enable row level security;
 
 -- Drop generic policies if they exist (to avoid conflicts)
 drop policy if exists "Autenticados podem ler tudo" on public.turmas;
 drop policy if exists "Autenticados podem ler tudo" on public.alunos;
 drop policy if exists "Autenticados podem ler tudo" on public.frequencia;
 
--- Create Granular Policies for Authenticated Staff
--- Note: In a production app, you might want to differentiate between 'admin' and 'professor' roles.
+-- Drop new policies if they exist before creating
+drop policy if exists "Public access can see funcionarios" on public.funcionarios;
+drop policy if exists "Public access can see professores" on public.professores;
+drop policy if exists "Public access can see equipamentos" on public.equipamentos;
+drop policy if exists "Public access can see modalidades" on public.modalidades;
+drop policy if exists "Public access can write funcionarios" on public.funcionarios;
+drop policy if exists "Public access can write professores" on public.professores;
+drop policy if exists "Public access can write equipamentos" on public.equipamentos;
+drop policy if exists "Public access can write modalidades" on public.modalidades;
+drop policy if exists "Public access can manage turmas" on public.turmas;
+drop policy if exists "Public access can manage alunos" on public.alunos;
+drop policy if exists "Public access can manage matriculas" on public.matriculas;
+drop policy if exists "Public access can manage frequencia" on public.frequencia;
+drop policy if exists "Public access can manage turmas_auxiliares" on public.turmas_auxiliares;
 
+-- Create Granular Policies for Authenticated Staff
 -- 1. Funcionários/Professores/Equipamentos/Modalidades (Leitura para todos, Escrita para todos)
 create policy "Public access can see funcionarios" on public.funcionarios for select using (true);
 create policy "Public access can see professores" on public.professores for select using (true);
@@ -196,8 +217,11 @@ create policy "Public access can manage matriculas" on public.matriculas for all
 -- 5. Frequencia (CRUD para todos)
 create policy "Public access can manage frequencia" on public.frequencia for all using (true);
 
+-- 6. Turmas Auxiliares (CRUD para todos)
+create policy "Public access can manage turmas_auxiliares" on public.turmas_auxiliares for all using (true);
+
 -- 6. AI Logs (to store chat history)
-create table public.ai_logs (
+create table if not exists public.ai_logs (
   id uuid default gen_random_uuid() primary key,
   user_id uuid references auth.users(id),
   user_prompt text not null,
@@ -207,11 +231,13 @@ create table public.ai_logs (
 
 alter table public.ai_logs enable row level security;
 
+drop policy if exists "Users can view their own AI logs" on public.ai_logs;
 create policy "Users can view their own AI logs"
   on public.ai_logs for select
   to authenticated
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can insert their own AI logs" on public.ai_logs;
 create policy "Users can insert their own AI logs"
   on public.ai_logs for insert
   to authenticated

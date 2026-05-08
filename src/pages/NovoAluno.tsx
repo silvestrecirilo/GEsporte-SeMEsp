@@ -25,7 +25,7 @@ const alunoSchema = z.object({
   complemento: z.string().optional(),
   bairro: z.string().min(2, 'Bairro é obrigatório'),
   telefone: z.string().min(10, 'Telefone inválido'),
-  email: z.string().email('E-mail inválido'),
+  email: z.string().email('E-mail inválido').optional().or(z.literal('')),
   dataNascimento: z.string().min(10, 'Data de nascimento é obrigatória'),
   parQ: parQSchema,
   turmas: z.array(z.string()).min(1, 'Selecione pelo menos uma turma'),
@@ -103,9 +103,9 @@ export default function NovoAluno() {
               dataNascimento: aluno.data_nascimento,
               bairro: aluno.bairro,
               telefone: aluno.telefone_responsavel,
-              cep: '00000000',
-              endereco: 'Endereço',
-              email: 'email@example.com',
+              cep: aluno.cep || '',
+              endereco: aluno.endereco || '',
+              email: aluno.email || '',
               turmas: aluno.matriculas?.map((m: any) => m.turma_id) || [],
               parQ: {
                 q1: 'false', q2: 'false', q3: 'false', q4: 'false', q5: 'false', q6: 'false', q7: 'false'
@@ -142,8 +142,12 @@ export default function NovoAluno() {
       const alunoData = {
         nome: data.nome,
         data_nascimento: data.dataNascimento,
+        cep: data.cep,
+        endereco: data.endereco,
+        complemento: data.complemento,
         bairro: data.bairro,
         telefone_responsavel: data.telefone,
+        email: data.email || null,
         foto_url: fotoUrl,
       };
 
@@ -310,7 +314,7 @@ export default function NovoAluno() {
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">E-mail</label>
+              <label className="block text-sm font-medium text-gray-700">E-mail (Opcional)</label>
               <input type="email" {...register('email')} className="w-full px-3 py-2 border rounded-md focus:ring-emerald-500 focus:border-emerald-500" />
               {errors.email && <p className="text-red-500 text-xs">{errors.email.message}</p>}
             </div>

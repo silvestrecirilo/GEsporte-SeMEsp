@@ -75,7 +75,13 @@ export default function NovaModalidade() {
       navigate('/modalidades');
     } catch (error: any) {
       console.error('Erro ao salvar:', error);
-      showNotification('error', 'Erro ao salvar modalidade', error.message || 'Houve um problema ao conectar com o banco de dados.');
+      let errorMessage = error.message || 'Houve um problema ao conectar com o banco de dados.';
+      
+      if (error.code === '23505') {
+        errorMessage = 'Esta modalidade já está cadastrada.';
+      }
+
+      showNotification('error', 'Erro ao salvar modalidade', errorMessage);
     }
   };
 

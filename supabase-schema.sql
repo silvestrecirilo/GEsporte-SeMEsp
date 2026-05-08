@@ -265,3 +265,15 @@ alter table public.funcionarios alter column telefone drop not null;
 alter table public.professores alter column email drop not null;
 alter table public.alunos alter column email drop not null;
 alter table public.alunos alter column telefone drop not null;
+
+-- 9. Indices for performance
+create index if not exists idx_funcionarios_nome on public.funcionarios(nome);
+create index if not exists idx_alunos_nome on public.alunos(nome);
+create index if not exists idx_alunos_matricula on public.alunos(matricula);
+create index if not exists idx_turmas_modalidade on public.turmas(modalidade_id);
+create index if not exists idx_matriculas_aluno on public.matriculas(aluno_id);
+create index if not exists idx_matriculas_turma on public.matriculas(turma_id);
+create index if not exists idx_frequencia_aluno_turma on public.frequencia(aluno_id, turma_id);
+create index if not exists idx_frequencia_data on public.frequencia(data_aula);
+create index if not exists idx_turmas_auxiliares_turma on public.turmas_auxiliares(turma_id);
+create index if not exists idx_turmas_auxiliares_funcionario on public.turmas_auxiliares(funcionario_id);

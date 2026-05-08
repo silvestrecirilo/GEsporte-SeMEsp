@@ -94,8 +94,8 @@ export default function NovaTurma() {
             modalidadeId: data.modalidade_id,
             equipamentoId: data.equipamento_id,
             diasSemana: Array.isArray(data.dias_semana) ? data.dias_semana : [data.dias_semana],
-            horaInicio: data.horario_inicio?.substring(0, 5) || '',
-            horaFim: data.horario_fim?.substring(0, 5) || '',
+            horaInicio: data.hora_inicio?.substring(0, 5) || '',
+            horaFim: data.hora_fim?.substring(0, 5) || '',
             professorId: data.professor_id || '',
             professoresAuxiliares: data.turmas_auxiliares?.map((a: any) => a.funcionario_id) || [],
           });
@@ -172,8 +172,8 @@ export default function NovaTurma() {
         equipamento_id: data.equipamentoId,
         professor_id: data.professorId,
         dias_semana: data.diasSemana,
-        horario_inicio: data.horaInicio,
-        horario_fim: data.horaFim,
+        hora_inicio: data.horaInicio,
+        hora_fim: data.horaFim,
         capacidade: 30,
         status: 'ativa'
       };
@@ -215,7 +215,17 @@ export default function NovaTurma() {
       navigate('/turmas');
     } catch (error: any) {
       console.error('Erro ao salvar:', error);
-      showNotification('error', 'Erro ao salvar os dados', error.message || 'Houve um problema ao conectar com o banco de dados.');
+      let errorMessage = error.message || 'Houve um problema ao conectar com o banco de dados.';
+      
+      if (error.code === '23505') {
+        if (error.message.includes('codigo')) {
+          errorMessage = 'Este código de turma já está em uso.';
+        } else {
+          errorMessage = 'Já existe um registro com estes dados únicos no sistema.';
+        }
+      }
+
+      showNotification('error', 'Erro ao salvar os dados', errorMessage);
     }
   };
 

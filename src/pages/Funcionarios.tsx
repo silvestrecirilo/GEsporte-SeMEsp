@@ -68,9 +68,9 @@ export default function Funcionarios() {
 
     let totalMinutes = 0;
     professorTurmas.forEach(t => {
-      if (t.horario_inicio && t.horario_fim && t.dias_semana) {
-        const [h1, m1] = t.horario_inicio.split(':').map(Number);
-        const [h2, m2] = t.horario_fim.split(':').map(Number);
+      if (t.hora_inicio && t.hora_fim && t.dias_semana) {
+        const [h1, m1] = t.hora_inicio.split(':').map(Number);
+        const [h2, m2] = t.hora_fim.split(':').map(Number);
         const duration = (h2 * 60 + m2) - (h1 * 60 + m1);
         totalMinutes += duration * t.dias_semana.length;
       }

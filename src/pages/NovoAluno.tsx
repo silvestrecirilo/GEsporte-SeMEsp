@@ -195,7 +195,19 @@ export default function NovoAluno() {
       navigate('/alunos');
     } catch (error: any) {
       console.error('Erro ao salvar:', error);
-      showNotification('error', 'Erro ao salvar os dados', error.message || 'Houve um problema ao conectar com o banco de dados.');
+      let errorMessage = error.message || 'Houve um problema ao conectar com o banco de dados.';
+      
+      if (error.code === '23505') {
+        if (error.message.includes('matricula')) {
+          errorMessage = 'Erro ao gerar número de matrícula. Tente salvar novamente.';
+        } else if (error.message.includes('email')) {
+          errorMessage = 'Este e-mail já está cadastrado para outro aluno.';
+        } else {
+          errorMessage = 'Já existe um aluno cadastrado com estes dados.';
+        }
+      }
+
+      showNotification('error', 'Erro ao salvar os dados', errorMessage);
     }
   };
 
@@ -366,7 +378,7 @@ export default function NovoAluno() {
                   <div className="flex-1">
                     <div className="text-sm font-medium text-gray-900">{turma.modalidades?.nome}</div>
                     <div className="text-xs text-gray-500">
-                      {turma.equipamentos?.tipo} - {turma.dias_semana.join(', ')} ({turma.horario_inicio})
+                      {turma.equipamentos?.tipo} - {turma.dias_semana.join(', ')} ({turma.hora_inicio})
                     </div>
                   </div>
                 </label>

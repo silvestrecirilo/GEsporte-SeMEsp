@@ -19,7 +19,7 @@ export default function Turmas() {
           *,
           modalidades (nome),
           equipamentos (bairro),
-          funcionarios (nome),
+          professores:professor_id (nome),
           matriculas (count)
         `)
         .order('created_at', { ascending: false });
@@ -56,7 +56,7 @@ export default function Turmas() {
       headers.join(','),
       ...turmas.map(t => {
         const dias = Array.isArray(t.dias_semana) ? t.dias_semana.join(' e ') : t.dias_semana;
-        const horario = `${t.horario_inicio?.substring(0, 5)} - ${t.horario_fim?.substring(0, 5)}`;
+        const horario = `${t.hora_inicio?.substring(0, 5)} - ${t.hora_fim?.substring(0, 5)}`;
         const matriculados = t.matriculas?.[0]?.count || 0;
         
         return [
@@ -65,7 +65,7 @@ export default function Turmas() {
           `"${t.equipamentos?.bairro || ''}"`,
           `"${dias}"`,
           `"${horario}"`,
-          `"${t.funcionarios?.nome || ''}"`,
+          `"${t.professores?.nome || ''}"`,
           matriculados,
           t.capacidade || 30
         ].join(',');
@@ -89,7 +89,7 @@ export default function Turmas() {
       turma.codigo?.toLowerCase().includes(searchLower) ||
       turma.modalidades?.nome?.toLowerCase().includes(searchLower) ||
       turma.equipamentos?.bairro?.toLowerCase().includes(searchLower) ||
-      turma.funcionarios?.nome?.toLowerCase().includes(searchLower)
+      turma.professores?.nome?.toLowerCase().includes(searchLower)
     );
   }) || [];
 
@@ -177,10 +177,10 @@ export default function Turmas() {
                       <div className="sm:hidden text-xs text-gray-500 mt-1">
                         {Array.isArray(turma.dias_semana) ? turma.dias_semana.join(', ') : turma.dias_semana}
                         <br />
-                        {turma.horario_inicio?.substring(0, 5)} - {turma.horario_fim?.substring(0, 5)}
+                        {turma.hora_inicio?.substring(0, 5)} - {turma.hora_fim?.substring(0, 5)}
                       </div>
                       <div className="sm:hidden text-xs text-gray-500 mt-1">
-                        Prof: {turma.funcionarios?.nome || 'Sem professor'}
+                        Prof: {turma.professores?.nome || 'Sem professor'}
                       </div>
                     </td>
                     <td className="px-6 py-4 text-gray-600 hidden md:table-cell">
@@ -191,11 +191,11 @@ export default function Turmas() {
                         {Array.isArray(turma.dias_semana) ? turma.dias_semana.join(', ') : turma.dias_semana}
                       </div>
                       <div className="text-xs text-gray-500">
-                        {turma.horario_inicio?.substring(0, 5)} - {turma.horario_fim?.substring(0, 5)}
+                        {turma.hora_inicio?.substring(0, 5)} - {turma.hora_fim?.substring(0, 5)}
                       </div>
                     </td>
                     <td className="px-6 py-4 text-gray-600 hidden sm:table-cell">
-                      {turma.funcionarios?.nome || 'Não atribuído'}
+                      {turma.professores?.nome || 'Não atribuído'}
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex justify-end items-center space-x-2">

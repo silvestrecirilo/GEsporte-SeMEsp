@@ -89,7 +89,13 @@ export default function NovoEquipamento() {
       navigate('/equipamentos');
     } catch (error: any) {
       console.error('Erro ao salvar:', error);
-      showNotification('error', 'Erro ao salvar os dados', error.message || 'Houve um problema ao conectar com o banco de dados.');
+      let errorMessage = error.message || 'Houve um problema ao conectar com o banco de dados.';
+      
+      if (error.code === '23505') {
+        errorMessage = 'Já existe um equipamento cadastrado com estes dados.';
+      }
+
+      showNotification('error', 'Erro ao salvar os dados', errorMessage);
     }
   };
 

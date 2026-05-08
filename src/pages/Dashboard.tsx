@@ -61,7 +61,7 @@ export default function Dashboard() {
             matriculas (count)
           `),
           supabase.from('frequencia')
-            .select('data_aula, status')
+            .select('data_aula, status_aula')
             .gte('data_aula', fourWeeksAgo.toISOString().split('T')[0])
             .lte('data_aula', today.toISOString().split('T')[0]),
           supabase.from('alunos').select('bairro'),
@@ -69,8 +69,8 @@ export default function Dashboard() {
             id,
             codigo,
             dias_semana,
-            horario_inicio,
-            horario_fim,
+            hora_inicio,
+            hora_fim,
             modalidades (nome),
             equipamentos (bairro, tipo)
           `).eq('status', 'ativa')
@@ -78,7 +78,7 @@ export default function Dashboard() {
 
         // Calculate Volume de Atendimentos
         const avgFrequency = frequenciaData && frequenciaData.length > 0 
-          ? frequenciaData.filter((r: any) => r.status === 'presente' || r.status === 'falta_justificada').length / frequenciaData.length
+          ? frequenciaData.filter((r: any) => r.status_aula === 'presente' || r.status_aula === 'falta_justificada').length / frequenciaData.length
           : 0.8; // default 80% if no data
 
         let totalVolume = 0;
@@ -151,14 +151,14 @@ export default function Dashboard() {
           ];
 
           frequenciaData.forEach(record => {
-            if (record.status === 'aula_cancelada') return;
+            if (record.status_aula === 'aula_cancelada') return;
             
             const recordDate = new Date(record.data_aula);
             const week = weeks.find(w => recordDate >= w.start && recordDate <= w.end);
             
             if (week) {
               week.total++;
-              if (record.status === 'presente' || record.status === 'falta_justificada') {
+              if (record.status_aula === 'presente' || record.status_aula === 'falta_justificada') {
                 week.presentes++;
               }
             }
@@ -360,7 +360,7 @@ export default function Dashboard() {
                   <div className="space-y-3">
                     {turmasSchedule
                       .filter(t => t.dias_semana?.includes(dia))
-                      .sort((a, b) => a.horario_inicio.localeCompare(b.horario_inicio))
+                      .sort((a, b) => (a.hora_inicio || '').localeCompare(b.hora_inicio || ''))
                       .map((turma) => (
                         <div 
                           key={`${turma.id}-${dia}`}
@@ -368,7 +368,7 @@ export default function Dashboard() {
                         >
                           <div className="flex items-center justify-between mb-1">
                             <span className="text-xs font-bold text-emerald-700">
-                              {turma.horario_inicio} - {turma.horario_fim}
+                              {turma.hora_inicio?.substring(0, 5)} - {turma.hora_fim?.substring(0, 5)}
                             </span>
                             <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 rounded font-mono">
                               {turma.codigo}

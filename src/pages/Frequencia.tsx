@@ -73,11 +73,11 @@ export default function Frequencia() {
             id,
             codigo,
             dias_semana,
-            horario_inicio,
-            horario_fim,
+            hora_inicio,
+            hora_fim,
             modalidades (nome),
             equipamentos (bairro),
-            funcionarios (nome)
+            professores:professor_id (nome)
           `)
           .eq('id', id)
           .single();
@@ -92,8 +92,8 @@ export default function Frequencia() {
             codigo: data.codigo || '',
             modalidade: data.modalidades?.nome || 'Desconhecida',
             bairro: data.equipamentos?.bairro || 'Desconhecido',
-            professor: data.funcionarios?.nome || 'Não atribuído',
-            horario: `${dias.join(', ')} - ${data.horario_inicio} às ${data.horario_fim}`,
+            professor: data.professores?.nome || 'Não atribuído',
+            horario: `${dias.join(', ')} - ${data.hora_inicio} às ${data.hora_fim}`,
             diasSemana: dias
           });
 
@@ -123,17 +123,17 @@ export default function Frequencia() {
         if (dataAula) {
           const { data: frequenciaData, error: frequenciaError } = await supabase
             .from('frequencia')
-            .select('aluno_id, status')
+            .select('aluno_id, status_aula')
             .eq('turma_id', id)
             .eq('data_aula', dataAula);
 
           if (frequenciaError) throw frequenciaError;
 
           const frequenciaMap = new Map(
-            frequenciaData?.map(f => [f.aluno_id, f.status as StatusAula]) || []
+            frequenciaData?.map(f => [f.aluno_id, f.status_aula as StatusAula]) || []
           );
 
-          const isCancelada = frequenciaData && frequenciaData.length > 0 && frequenciaData.every(f => f.status === 'aula_cancelada');
+          const isCancelada = frequenciaData && frequenciaData.length > 0 && frequenciaData.every(f => f.status_aula === 'aula_cancelada');
           setAulaCancelada(isCancelada || false);
 
           if (matriculasData) {
@@ -202,13 +202,12 @@ export default function Frequencia() {
         turma_id: id,
         aluno_id: aluno.id,
         data_aula: dataAula,
-        status: aluno.status === 'pendente' ? 'falta' : aluno.status,
-        registrado_por: userId
+        status_aula: aluno.status === 'pendente' ? 'falta' : aluno.status,
       }));
 
       const { error } = await supabase
         .from('frequencia')
-        .upsert(records, { onConflict: 'turma_id, aluno_id, data_aula' });
+        .upsert(records, { onConflict: 'aluno_id, turma_id, data_aula' });
 
       if (error) throw error;
 

@@ -10,7 +10,6 @@ import { useNotification } from '../components/Notification';
 
 const modalidadeSchema = z.object({
   nome: z.string().min(3, 'Nome da modalidade é obrigatório'),
-  descricao: z.string().optional(),
 });
 
 type ModalidadeFormData = z.infer<typeof modalidadeSchema>;
@@ -45,7 +44,6 @@ export default function NovaModalidade() {
     if (modalidade) {
       reset({
         nome: modalidade.nome,
-        descricao: modalidade.descricao || '',
       });
     }
   }, [modalidade, reset]);
@@ -57,7 +55,6 @@ export default function NovaModalidade() {
           .from('modalidades')
           .update({
             nome: data.nome,
-            descricao: data.descricao,
           })
           .eq('id', id);
         
@@ -65,7 +62,6 @@ export default function NovaModalidade() {
       } else {
         const { error } = await supabase.from('modalidades').insert([{
           nome: data.nome,
-          descricao: data.descricao,
         }]);
         
         if (error) throw error;
@@ -114,16 +110,6 @@ export default function NovaModalidade() {
                 className="w-full px-3 py-2 border rounded-md focus:ring-emerald-500 focus:border-emerald-500" 
               />
               {errors.nome && <p className="text-red-500 text-xs">{errors.nome.message}</p>}
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Descrição (Opcional)</label>
-              <textarea 
-                {...register('descricao')} 
-                rows={3}
-                placeholder="Breve descrição sobre a modalidade..."
-                className="w-full px-3 py-2 border rounded-md focus:ring-emerald-500 focus:border-emerald-500 resize-none" 
-              />
             </div>
           </div>
         </div>

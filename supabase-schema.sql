@@ -37,7 +37,6 @@ create table if not exists public.equipamentos (
 create table if not exists public.modalidades (
   id uuid default uuid_generate_v4() primary key,
   nome text not null unique,
-  descricao text,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
@@ -266,7 +265,6 @@ alter table public.funcionarios alter column telefone drop not null;
 alter table public.professores alter column email drop not null;
 alter table public.alunos alter column email drop not null;
 alter table public.alunos alter column telefone drop not null;
-alter table public.modalidades add column if not exists descricao text;
 
 -- 9. Indices for performance
 create index if not exists idx_funcionarios_nome on public.funcionarios(nome);

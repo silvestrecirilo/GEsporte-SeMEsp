@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Search, Users, Trash2, Edit, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -9,27 +9,71 @@ export default function Turmas() {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+  const isDemo = localStorage.getItem('demo_auth') === 'true';
+
+  const { data: userProfile } = useQuery({
+    queryKey: ['user-permissions'],
+    queryFn: async () => {
+      if (isDemo) return { id: 'demo-admin', nome: 'Administrador Demo', cargo: 'Admin', permissoes: ['dashboard', 'alunos', 'turmas', 'frequencia', 'equipamentos', 'funcionarios', 'modalidades', 'relatorios', 'agendamentos'], isAdmin: true };
+      
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.email) return null;
+
+      const { data: funcionario } = await supabase
+        .from('funcionarios')
+        .select('id, nome, cargo, permissoes')
+        .eq('email', user.email)
+        .single();
+      
+      return funcionario ? { ...funcionario, isAdmin: false } : null;
+    }
+  });
+
+  const canManageTurmas = (userProfile as any)?.permissoes?.includes('turmas') || (userProfile as any)?.isAdmin;
+  const hasFrequenciaOnly = (userProfile as any)?.permissoes?.includes('frequencia') && !canManageTurmas;
 
   const { data: turmas, isLoading } = useQuery({
-    queryKey: ['turmas'],
+    queryKey: ['turmas', userProfile?.id, hasFrequenciaOnly],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('turmas')
         .select(`
           *,
           modalidades (nome),
           equipamentos (bairro),
           professores:professor_id (nome),
-          matriculas (count)
-        `)
-        .order('created_at', { ascending: false });
+          matriculas (count),
+          turmas_auxiliares!left (funcionario_id)
+        `);
+
+      // If teacher with limited permission, only show their turmas
+      if (hasFrequenciaOnly && userProfile?.id) {
+        // This is a bit tricky with Supabase JS for complex OR across relations
+        // We'll filter turmas where they are the main professor OR in turmas_auxiliares
+        // Since we include turmas_auxiliares!left, we can use an OR filter on results if query supports it
+        // Or we just fetch and filter in JS if the count is small enough, but let's try a better query if possible
+        
+        // Alternative: use a simpler query and filter in JS for now or use .or()
+        // Supabase .or() with nested filters is limited. Let's filter in JS for safety in this demo.
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: false });
 
       if (error) {
         console.error('Erro ao buscar turmas:', error);
         return [];
       }
+
+      if (hasFrequenciaOnly && userProfile?.id) {
+        return data.filter((t: any) => 
+          t.professor_id === userProfile.id || 
+          t.turmas_auxiliares?.some((a: any) => a.funcionario_id === userProfile.id)
+        );
+      }
+
       return data;
-    }
+    },
+    enabled: !!userProfile
   });
 
   const deleteMutation = useMutation({
@@ -102,22 +146,28 @@ export default function Turmas() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold text-gray-900">Turmas</h1>
+        <h1 className="text-2xl font-bold text-gray-900">
+          {hasFrequenciaOnly ? 'Minhas Turmas (Frequência)' : 'Turmas'}
+        </h1>
         <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3">
-          <button
-            onClick={handleExportCSV}
-            className="flex items-center justify-center px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors"
-          >
-            <Download className="w-5 h-5 mr-2" />
-            Exportar CSV
-          </button>
-          <Link
-            to="/turmas/nova"
-            className="flex items-center justify-center px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition-colors"
-          >
-            <Plus className="w-5 h-5 mr-2" />
-            Nova Turma
-          </Link>
+          {canManageTurmas && (
+            <>
+              <button
+                onClick={handleExportCSV}
+                className="flex items-center justify-center px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors"
+              >
+                <Download className="w-5 h-5 mr-2" />
+                Exportar CSV
+              </button>
+              <Link
+                to="/turmas/nova"
+                className="flex items-center justify-center px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition-colors"
+              >
+                <Plus className="w-5 h-5 mr-2" />
+                Nova Turma
+              </Link>
+            </>
+          )}
         </div>
       </div>
 
@@ -170,7 +220,6 @@ export default function Turmas() {
                         <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{turma.codigo || 'S/ COD'}</span>
                         <span>{turma.modalidades?.nome || 'N/A'}</span>
                       </div>
-                      {/* Show mobile-only details */}
                       <div className="md:hidden text-xs text-gray-500 mt-1">
                         {turma.equipamentos?.bairro || 'N/A'}
                       </div>
@@ -205,20 +254,24 @@ export default function Turmas() {
                         <Link to={`/turmas/${turma.id}/frequencia`} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors sm:hidden" title="Frequência">
                           <Users className="w-4 h-4" />
                         </Link>
-                        <Link 
-                          to={`/turmas/${turma.id}/editar`}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
-                          title="Editar"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </Link>
-                        <button 
-                          onClick={() => handleDelete(turma.id)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                          title="Excluir"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {canManageTurmas && (
+                          <>
+                            <Link 
+                              to={`/turmas/${turma.id}/editar`}
+                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                              title="Editar"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Link>
+                            <button 
+                              onClick={() => handleDelete(turma.id)}
+                              className="p-2 text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                              title="Excluir"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>

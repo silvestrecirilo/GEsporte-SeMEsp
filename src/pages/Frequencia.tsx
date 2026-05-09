@@ -28,6 +28,7 @@ export default function Frequencia() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { showNotification } = useNotification();
+  const isDemo = localStorage.getItem('demo_auth') === 'true';
   
   // Estado para a data selecionada
   const [dataAula, setDataAula] = useState('');
@@ -39,6 +40,32 @@ export default function Frequencia() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [aulaCancelada, setAulaCancelada] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // Check permissions
+  useEffect(() => {
+    async function checkAccess() {
+      if (isDemo) return;
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.email) {
+        navigate('/login');
+        return;
+      }
+
+      const { data: funcionario } = await supabase
+        .from('funcionarios')
+        .select('id, permissoes')
+        .eq('email', user.email)
+        .single();
+      
+      if (!funcionario || (!funcionario.permissoes?.includes('frequencia') && !funcionario.permissoes?.includes('turmas'))) {
+        showNotification('error', 'Acesso Negado', 'Você não tem permissão para lançar frequência.');
+        navigate('/');
+        return;
+      }
+    }
+    checkAccess();
+  }, [id, navigate, isDemo]);
 
   // Helper to get valid dates
   const getValidDates = (diasSemana: string[]) => {

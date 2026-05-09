@@ -37,6 +37,26 @@ export default function Dashboard() {
         const fourWeeksAgo = new Date();
         fourWeeksAgo.setDate(today.getDate() - 28);
 
+        const isDemo = localStorage.getItem('demo_auth') === 'true';
+        let userProfile: any = null;
+
+        if (isDemo) {
+          userProfile = { id: 'demo-admin', nome: 'Administrador Demo', cargo: 'Admin', permissoes: ['dashboard', 'alunos', 'turmas', 'frequencia', 'equipamentos', 'funcionarios', 'modalidades', 'relatorios', 'agendamentos'], isAdmin: true };
+        } else {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user?.email) {
+            const { data: funcionario } = await supabase
+              .from('funcionarios')
+              .select('id, nome, cargo, permissoes')
+              .eq('email', user.email)
+              .single();
+            userProfile = funcionario;
+          }
+        }
+
+        const canManageTurmas = userProfile?.permissoes?.includes('turmas') || userProfile?.isAdmin;
+        const hasFrequenciaOnly = userProfile?.permissoes?.includes('frequencia') && !canManageTurmas;
+
         // Fetch counts
         const [
           { count: alunosCount },
@@ -58,7 +78,9 @@ export default function Dashboard() {
             id,
             dias_semana,
             modalidades (nome),
-            matriculas (count)
+            matriculas (count),
+            professor_id,
+            turmas_auxiliares (funcionario_id)
           `),
           supabase.from('frequencia')
             .select('data_aula, status_aula')
@@ -72,9 +94,26 @@ export default function Dashboard() {
             hora_inicio,
             hora_fim,
             modalidades (nome),
-            equipamentos (bairro, tipo)
+            equipamentos (bairro, tipo),
+            professor_id,
+            turmas_auxiliares (funcionario_id)
           `).eq('status', 'ativa')
         ]);
+
+        // Filter data based on permissions
+        let filteredTurmasData = turmasData || [];
+        let filteredScheduleData = scheduleData || [];
+
+        if (hasFrequenciaOnly && userProfile?.id) {
+          filteredTurmasData = filteredTurmasData.filter((t: any) => 
+            t.professor_id === userProfile.id || 
+            t.turmas_auxiliares?.some((a: any) => a.funcionario_id === userProfile.id)
+          );
+          filteredScheduleData = filteredScheduleData.filter((t: any) => 
+            t.professor_id === userProfile.id || 
+            t.turmas_auxiliares?.some((a: any) => a.funcionario_id === userProfile.id)
+          );
+        }
 
         // Calculate Volume de Atendimentos
         const avgFrequency = frequenciaData && frequenciaData.length > 0 
@@ -82,25 +121,26 @@ export default function Dashboard() {
           : 0.8; // default 80% if no data
 
         let totalVolume = 0;
-        if (turmasData) {
-          turmasData.forEach((turma: any) => {
-            const students = turma.matriculas?.[0]?.count || 0;
-            const classesPerWeek = turma.dias_semana?.length || 0;
-            const classesPerMonth = classesPerWeek * 4;
-            totalVolume += students * classesPerMonth * avgFrequency;
-          });
-        }
+        filteredTurmasData.forEach((turma: any) => {
+          const students = turma.matriculas?.[0]?.count || 0;
+          const classesPerWeek = turma.dias_semana?.length || 0;
+          const classesPerMonth = classesPerWeek * 4;
+          totalVolume += students * classesPerMonth * avgFrequency;
+        });
 
         setStats({
-          totalAlunos: alunosCount || 0,
-          turmasAtivas: turmasCount || 0,
-          totalModalidades: modalidadesCount || 0,
+          totalAlunos: hasFrequenciaOnly ? filteredTurmasData.reduce((acc, t) => acc + (t.matriculas?.[0]?.count || 0), 0) : (alunosCount || 0),
+          turmasAtivas: hasFrequenciaOnly ? filteredTurmasData.length : (turmasCount || 0),
+          totalModalidades: hasFrequenciaOnly ? new Set(filteredTurmasData.map(t => {
+            const mod = t.modalidades as any;
+            return Array.isArray(mod) ? mod[0]?.nome : mod?.nome;
+          }).filter(Boolean)).size : (modalidadesCount || 0),
           totalEquipamentos: equipamentosCount || 0,
-          totalAtendimentos: matriculasCount || 0,
+          totalAtendimentos: hasFrequenciaOnly ? filteredTurmasData.reduce((acc, t) => acc + (t.matriculas?.[0]?.count || 0), 0) : (matriculasCount || 0),
           volumeAtendimentos: Math.round(totalVolume),
         });
 
-        setTurmasSchedule(scheduleData || []);
+        setTurmasSchedule(filteredScheduleData);
 
         // Atendimentos por Bairro
         if (alunosData) {

@@ -1,13 +1,48 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { LogOut, Users, MapPin, Activity, Calendar, LayoutDashboard, BookOpen, Menu, X, Clock, Bot } from 'lucide-react';
+import { LogOut, Users, MapPin, Activity, Calendar, LayoutDashboard, BookOpen, Menu, X, Clock } from 'lucide-react';
 import AIAssistant from './AIAssistant';
 
 export default function Layout({ onDemoLogout }: { onDemoLogout?: () => void }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [userPermissions, setUserPermissions] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const isDemo = localStorage.getItem('demo_auth') === 'true';
+
+  useEffect(() => {
+    async function loadPermissions() {
+      if (isDemo) {
+        // Pseudo-admin permissions for demo
+        setUserPermissions([
+          'dashboard', 'alunos', 'turmas', 'frequencia', 
+          'equipamentos', 'funcionarios', 'modalidades', 
+          'relatorios', 'agendamentos'
+        ]);
+        setLoading(false);
+        return;
+      }
+
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (user?.email) {
+        const { data: funcionario } = await supabase
+          .from('funcionarios')
+          .select('permissoes')
+          .eq('email', user.email)
+          .single();
+        
+        if (funcionario) {
+          setUserPermissions(funcionario.permissoes || []);
+        }
+      }
+      setLoading(false);
+    }
+
+    loadPermissions();
+  }, [isDemo]);
 
   const handleLogout = async () => {
     if (onDemoLogout) {
@@ -18,15 +53,26 @@ export default function Layout({ onDemoLogout }: { onDemoLogout?: () => void }) 
   };
 
   const navItems = [
-    { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
-    { path: '/alunos', icon: Users, label: 'Alunos' },
-    { path: '/turmas', icon: Calendar, label: 'Turmas' },
-    { path: '/equipamentos', icon: MapPin, label: 'Equipamentos' },
-    { path: '/modalidades', icon: Activity, label: 'Modalidades' },
-    { path: '/funcionarios', icon: Users, label: 'Funcionários' },
-    { path: '/relatorios', icon: BookOpen, label: 'Relatórios' },
-    { path: '/agendamentos', icon: Clock, label: 'Agendamentos' },
+    { path: '/', icon: LayoutDashboard, label: 'Dashboard', permission: 'dashboard' },
+    { path: '/alunos', icon: Users, label: 'Alunos', permission: 'alunos' },
+    { path: '/turmas', icon: Calendar, label: 'Turmas', permission: 'turmas' },
+    { path: '/equipamentos', icon: MapPin, label: 'Equipamentos', permission: 'equipamentos' },
+    { path: '/modalidades', icon: Activity, label: 'Modalidades', permission: 'modalidades' },
+    { path: '/funcionarios', icon: Users, label: 'Funcionários', permission: 'funcionarios' },
+    { path: '/relatorios', icon: BookOpen, label: 'Relatórios', permission: 'relatorios' },
+    { path: '/agendamentos', icon: Clock, label: 'Agendamentos', permission: 'agendamentos' },
   ];
+
+  // Special case: if user only has 'frequencia' permission, they might see a limited Turmas list or direct link
+  const filteredNavItems = navItems.filter(item => userPermissions.includes(item.permission));
+
+  // If user has 'frequencia' but not 'turmas', show a 'Frequência' menu item that redirects to turmas (which will be filtered)
+  // or a more direct approach. For now, if they have 'frequencia', they should at least see 'Turmas' to access the frequency list.
+  if (userPermissions.includes('frequencia') && !userPermissions.includes('turmas')) {
+    if (!filteredNavItems.find(i => i.path === '/turmas')) {
+      filteredNavItems.push({ path: '/turmas', icon: Calendar, label: 'Minhas Turmas (Frequência)', permission: 'frequencia' });
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row">
@@ -61,27 +107,33 @@ export default function Layout({ onDemoLogout }: { onDemoLogout?: () => void }) 
         </div>
         
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = location.pathname === item.path || 
-                            (item.path !== '/' && location.pathname.startsWith(item.path));
-            
-            return (
-              <Link 
-                key={item.path}
-                to={item.path} 
-                onClick={() => setIsMobileMenuOpen(false)}
-                className={`flex items-center px-3 py-2 rounded-md transition-colors ${
-                  isActive 
-                    ? 'bg-emerald-50 text-emerald-600 font-medium' 
-                    : 'text-gray-700 hover:bg-gray-50 hover:text-emerald-600'
-                }`}
-              >
-                <Icon className={`w-5 h-5 mr-3 ${isActive ? 'text-emerald-600' : 'text-gray-400'}`} />
-                {item.label}
-              </Link>
-            );
-          })}
+          {loading ? (
+            <div className="animate-pulse space-y-2">
+              {[1,2,3,4,5].map(i => <div key={i} className="h-10 bg-gray-100 rounded-md"></div>)}
+            </div>
+          ) : (
+            filteredNavItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = location.pathname === item.path || 
+                              (item.path !== '/' && location.pathname.startsWith(item.path));
+              
+              return (
+                <Link 
+                  key={item.path}
+                  to={item.path} 
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={`flex items-center px-3 py-2 rounded-md transition-colors ${
+                    isActive 
+                      ? 'bg-emerald-50 text-emerald-600 font-medium' 
+                      : 'text-gray-700 hover:bg-gray-50 hover:text-emerald-600'
+                  }`}
+                >
+                  <Icon className={`w-5 h-5 mr-3 ${isActive ? 'text-emerald-600' : 'text-gray-400'}`} />
+                  {item.label}
+                </Link>
+              );
+            })
+          )}
         </nav>
         
         <div className="p-4 border-t border-gray-200">

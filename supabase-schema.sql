@@ -50,8 +50,8 @@ create table if not exists public.turmas (
   dias_semana text[] not null, -- ex: ['Segunda', 'Quarta']
   hora_inicio time not null,
   hora_fim time not null,
-  professor_id uuid references public.professores(id) on delete cascade not null,
-  professor_auxiliar_id uuid references public.professores(id) on delete set null,
+  professor_id uuid references public.funcionarios(id) on delete cascade not null,
+  professor_auxiliar_id uuid references public.funcionarios(id) on delete set null,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 

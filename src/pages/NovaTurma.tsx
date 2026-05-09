@@ -159,7 +159,11 @@ export default function NovaTurma() {
   const { data: professores } = useQuery({
     queryKey: ['professores-select'],
     queryFn: async () => {
-      const { data } = await supabase.from('funcionarios').select('id, nome').eq('role', 'professor').order('nome');
+      const { data } = await supabase
+        .from('funcionarios')
+        .select('id, nome')
+        .or('cargo.eq.Professor,role.eq.professor')
+        .order('nome');
       return data || [];
     }
   });

@@ -85,7 +85,7 @@ export default function Relatorios() {
       // Get turma details for class days
       const { data: turma, error: tError } = await supabase
         .from('turmas')
-        .select('*, modalidades(nome), equipamentos(bairro), funcionarios(nome)')
+        .select('*, modalidades(nome), equipamentos(bairro), professores:professor_id(nome)')
         .eq('id', selectedTurmaId)
         .single();
 
@@ -410,7 +410,7 @@ export default function Relatorios() {
                       </div>
                       <div>
                         <span className="font-bold block text-gray-500 uppercase text-[10px]">Professor</span>
-                        <span className="text-gray-900 font-medium">{attendanceData.turma.funcionarios?.nome}</span>
+                        <span className="text-gray-900 font-medium">{attendanceData.turma.professores?.nome}</span>
                       </div>
                       <div>
                         <span className="font-bold block text-gray-500 uppercase text-[10px]">Mês/Ano</span>

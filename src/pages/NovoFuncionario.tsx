@@ -83,6 +83,7 @@ export default function NovoFuncionario() {
             email: data.email || null,
             telefone: data.telefone || null,
             permissoes: data.permissoes,
+            role: data.cargo === 'Professor' ? 'professor' : 'funcionario'
           })
           .eq('id', id);
         
@@ -94,6 +95,7 @@ export default function NovoFuncionario() {
           email: data.email || null,
           telefone: data.telefone || null,
           permissoes: data.permissoes,
+          role: data.cargo === 'Professor' ? 'professor' : 'funcionario'
         }]);
         
         if (error) throw error;

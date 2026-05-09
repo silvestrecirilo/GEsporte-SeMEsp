@@ -51,7 +51,6 @@ create table if not exists public.turmas (
   hora_fim time not null,
   professor_id uuid references public.funcionarios(id) on delete cascade not null,
   professor_auxiliar_id uuid references public.funcionarios(id) on delete set null,
-  capacidade integer default 30,
   status text not null default 'ativa' check (status in ('ativa', 'inativa', 'cancelada')),
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
@@ -163,6 +162,21 @@ begin
 end;
 $$ language plpgsql;
 
+-- 10. Atividades Externas (Agendamentos)
+create table if not exists public.atividades_externas (
+  id uuid default uuid_generate_v4() primary key,
+  titulo text not null,
+  equipamento_id uuid references public.equipamentos(id) on delete cascade not null,
+  dia_semana text not null,
+  horario_inicio time not null,
+  horario_fim time not null,
+  tipo text not null check (tipo in ('proprio', 'terceiros')),
+  data_inicio date,
+  data_fim date,
+  descricao text,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
 -- RLS (Row Level Security) Setup
 alter table public.funcionarios enable row level security;
 alter table public.professores enable row level security;
@@ -173,6 +187,7 @@ alter table public.alunos enable row level security;
 alter table public.matriculas enable row level security;
 alter table public.frequencia enable row level security;
 alter table public.turmas_auxiliares enable row level security;
+alter table public.atividades_externas enable row level security;
 
 -- Drop generic policies if they exist (to avoid conflicts)
 drop policy if exists "Autenticados podem ler tudo" on public.turmas;
@@ -200,11 +215,13 @@ create policy "Public access can see funcionarios" on public.funcionarios for se
 create policy "Public access can see professores" on public.professores for select using (true);
 create policy "Public access can see equipamentos" on public.equipamentos for select using (true);
 create policy "Public access can see modalidades" on public.modalidades for select using (true);
+create policy "Public access can see atividades_externas" on public.atividades_externas for select using (true);
 
 create policy "Public access can write funcionarios" on public.funcionarios for all using (true);
 create policy "Public access can write professores" on public.professores for all using (true);
 create policy "Public access can write equipamentos" on public.equipamentos for all using (true);
 create policy "Public access can write modalidades" on public.modalidades for all using (true);
+create policy "Public access can write atividades_externas" on public.atividades_externas for all using (true);
 
 -- 2. Turmas (CRUD para todos)
 create policy "Public access can manage turmas" on public.turmas for all using (true);
@@ -267,7 +284,6 @@ alter table public.professores alter column email drop not null;
 alter table public.alunos alter column email drop not null;
 alter table public.alunos alter column telefone drop not null;
 alter table public.turmas drop column if exists bairro;
-alter table public.turmas add column if not exists capacidade integer default 30;
 alter table public.turmas add column if not exists status text not null default 'ativa' check (status in ('ativa', 'inativa', 'cancelada'));
 
 -- 9. Indices for performance

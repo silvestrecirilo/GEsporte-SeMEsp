@@ -95,7 +95,7 @@ export default function Turmas() {
   const handleExportCSV = () => {
     if (!turmas || turmas.length === 0) return;
     
-    const headers = ['Código', 'Modalidade', 'Bairro', 'Dias da Semana', 'Horário', 'Professor', 'Alunos Matriculados', 'Capacidade'];
+    const headers = ['Código', 'Modalidade', 'Bairro', 'Dias da Semana', 'Horário', 'Professor', 'Alunos Matriculados'];
     const csvContent = [
       headers.join(','),
       ...turmas.map(t => {
@@ -110,8 +110,7 @@ export default function Turmas() {
           `"${dias}"`,
           `"${horario}"`,
           `"${t.professores?.nome || ''}"`,
-          matriculados,
-          t.capacidade || 30
+          matriculados
         ].join(',');
       })
     ].join('\n');

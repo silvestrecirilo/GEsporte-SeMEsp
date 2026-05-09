@@ -178,7 +178,6 @@ export default function NovaTurma() {
         dias_semana: data.diasSemana,
         hora_inicio: data.horaInicio,
         hora_fim: data.horaFim,
-        capacidade: 30,
         status: 'ativa'
       };
 

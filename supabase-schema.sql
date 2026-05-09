@@ -45,13 +45,14 @@ create table if not exists public.turmas (
   id uuid default uuid_generate_v4() primary key,
   codigo text unique, -- Identificação alfanumérica
   modalidade_id uuid references public.modalidades(id) on delete cascade not null,
-  bairro text not null,
   equipamento_id uuid references public.equipamentos(id) on delete cascade not null,
   dias_semana text[] not null, -- ex: ['Segunda', 'Quarta']
   hora_inicio time not null,
   hora_fim time not null,
   professor_id uuid references public.funcionarios(id) on delete cascade not null,
   professor_auxiliar_id uuid references public.funcionarios(id) on delete set null,
+  capacidade integer default 30,
+  status text not null default 'ativa' check (status in ('ativa', 'inativa', 'cancelada')),
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
@@ -265,6 +266,9 @@ alter table public.funcionarios alter column telefone drop not null;
 alter table public.professores alter column email drop not null;
 alter table public.alunos alter column email drop not null;
 alter table public.alunos alter column telefone drop not null;
+alter table public.turmas drop column if exists bairro;
+alter table public.turmas add column if not exists capacidade integer default 30;
+alter table public.turmas add column if not exists status text not null default 'ativa' check (status in ('ativa', 'inativa', 'cancelada'));
 
 -- 9. Indices for performance
 create index if not exists idx_funcionarios_nome on public.funcionarios(nome);

@@ -179,7 +179,7 @@ export default function NovaTurma() {
 
   const onSubmit = async (data: TurmaFormData) => {
     try {
-      const turmaData = {
+      const turmaData: any = {
         codigo: data.codigo,
         modalidade_id: data.modalidadeId,
         equipamento_id: data.equipamentoId,
@@ -192,22 +192,38 @@ export default function NovaTurma() {
 
       let turmaId = id;
 
-      if (id) {
-        const { error } = await supabase
-          .from('turmas')
-          .update(turmaData)
-          .eq('id', id);
+      const performSave = async (payload: any) => {
+        if (id) {
+          return await supabase
+            .from('turmas')
+            .update(payload)
+            .eq('id', id);
+        } else {
+          return await supabase
+            .from('turmas')
+            .insert([payload])
+            .select()
+            .single();
+        }
+      };
 
-        if (error) throw error;
-      } else {
-        const { data: newTurma, error } = await supabase
-          .from('turmas')
-          .insert([turmaData])
-          .select()
-          .single();
+      let saveResult = await performSave(turmaData);
 
-        if (error) throw error;
-        turmaId = newTurma.id;
+      // Handle potential schema cache issue: if 'status' column is not found, retry without it
+      if (saveResult.error && (
+        saveResult.error.message.includes('column "status" of relation "turmas" does not exist') ||
+        saveResult.error.code === '42703'
+      )) {
+        console.warn('Coluna "status" não encontrada no cache do schema, tentando salvar sem ela.');
+        const { status: _, ...fallbackData } = turmaData;
+        saveResult = await performSave(fallbackData);
+      }
+
+      if (saveResult.error) throw saveResult.error;
+
+      // Extract new ID if creating
+      if (!id) {
+        turmaId = saveResult.data.id;
       }
 
       // Update auxiliary professors

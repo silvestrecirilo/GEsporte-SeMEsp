@@ -29,28 +29,65 @@ export default function Agendamentos() {
 
   async function fetchData() {
     try {
-      const [turmasRes, equipamentosRes, atividadesRes] = await Promise.all([
-        supabase.from('turmas').select(`
+      // console.log('Buscando dados de agendamentos...');
+      // Fetch equipments first
+      const { data: eqData, error: eqError } = await supabase
+        .from('equipamentos')
+        .select('id, bairro, tipo')
+        .order('bairro');
+      
+      if (eqError) throw eqError;
+      // console.log('Equipamentos carregados:', eqData?.length || 0);
+      if (eqData) setEquipamentos(eqData);
+
+      // Fetch external activities
+      const { data: atData, error: atError } = await supabase
+        .from('atividades_externas')
+        .select('*');
+      
+      if (atError) {
+        console.warn('Erro ao buscar atividades externas:', atError);
+      } else if (atData) {
+        setAtividadesExternas(atData);
+      }
+
+      // Fetch turmas with a fallback if 'status' column is not yet recognized
+      let turmasQuery = supabase.from('turmas').select(`
+        id,
+        dias_semana,
+        horario_inicio,
+        horario_fim,
+        modalidades (nome),
+        equipamentos (id, bairro, tipo),
+        status
+      `);
+
+      // Try filtering by status first
+      const { data: tData, error: tError } = await turmasQuery.eq('status', 'Em Funcionamento');
+
+      if (tError) {
+        console.warn('Erro ao buscar turmas com filtro de status, tentando sem filtro:', tError);
+        // Fallback: try without the status filter if the column is problematic
+        const { data: fallbackData, error: fallbackError } = await supabase.from('turmas').select(`
           id,
           dias_semana,
           horario_inicio,
           horario_fim,
           modalidades (nome),
           equipamentos (id, bairro, tipo)
-        `).eq('status', 'Em Funcionamento'),
-        supabase.from('equipamentos').select('id, bairro, tipo').order('bairro'),
-        supabase.from('atividades_externas').select('*')
-      ]);
-
-      if (turmasRes.error) throw turmasRes.error;
-      if (equipamentosRes.error) throw equipamentosRes.error;
-      if (atividadesRes.error) throw atividadesRes.error;
-
-      setTurmas(turmasRes.data || []);
-      setEquipamentos(equipamentosRes.data || []);
-      setAtividadesExternas(atividadesRes.data || []);
+        `);
+        
+        if (!fallbackError && fallbackData) {
+          setTurmas(fallbackData);
+        } else if (fallbackError) {
+          console.error('Erro total ao buscar turmas:', fallbackError);
+        }
+      } else if (tData) {
+        setTurmas(tData);
+      }
     } catch (error) {
       console.error('Erro ao buscar agendamentos:', error);
+      showNotification('error', 'Erro ao carregar dados', 'Algumas informações podem estar incompletas devido a problemas na conexão ou no banco de dados.');
     } finally {
       setLoading(false);
     }

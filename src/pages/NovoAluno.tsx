@@ -84,7 +84,7 @@ export default function NovoAluno() {
         const { data: turmasData } = await supabase
           .from('turmas')
           .select('*, modalidades(nome), equipamentos(tipo)')
-          .eq('status', 'ativa');
+          .eq('status', 'Em Funcionamento');
         
         if (turmasData) setAvailableTurmas(turmasData);
 

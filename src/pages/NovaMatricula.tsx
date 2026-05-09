@@ -30,7 +30,7 @@ export default function NovaMatricula() {
             horario_fim,
             modalidades (nome),
             equipamentos (bairro)
-          `).eq('status', 'ativa')
+          `).eq('status', 'Em Funcionamento')
         ]);
 
         if (alunosRes.error) throw alunosRes.error;

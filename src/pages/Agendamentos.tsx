@@ -37,7 +37,7 @@ export default function Agendamentos() {
           horario_fim,
           modalidades (nome),
           equipamentos (id, bairro, tipo)
-        `).eq('status', 'ativa'),
+        `).eq('status', 'Em Funcionamento'),
         supabase.from('equipamentos').select('id, bairro, tipo').order('bairro'),
         supabase.from('atividades_externas').select('*')
       ]);
@@ -135,6 +135,7 @@ export default function Agendamentos() {
 
   const getEquipmentUtilization = (equipmentId: string) => {
     const eqTurmas = turmas.filter(t => {
+      // Supabase might return an object or an array for joined relations
       const eq = t.equipamentos;
       const eqId = Array.isArray(eq) ? eq[0]?.id : eq?.id;
       return eqId === equipmentId;
@@ -142,12 +143,12 @@ export default function Agendamentos() {
     const eqAtividades = atividadesExternas.filter(a => a.equipamento_id === equipmentId);
     
     const totalHours = eqTurmas.reduce((acc, t) => {
-      const start = parseInt(t.horario_inicio.split(':')[0]);
-      const end = parseInt(t.horario_fim.split(':')[0]);
+      const start = parseInt(t.horario_inicio?.split(':')[0] || '0');
+      const end = parseInt(t.horario_fim?.split(':')[0] || '0');
       return acc + (end - start) * (t.dias_semana?.length || 0);
     }, 0) + eqAtividades.reduce((acc, a) => {
-      const start = parseInt(a.horario_inicio.split(':')[0]);
-      const end = parseInt(a.horario_fim.split(':')[0]);
+      const start = parseInt(a.horario_inicio?.split(':')[0] || '0');
+      const end = parseInt(a.horario_fim?.split(':')[0] || '0');
       return acc + (end - start);
     }, 0);
 
@@ -316,12 +317,12 @@ export default function Agendamentos() {
                               <MapPin className="w-2.5 h-2.5 mr-1 mt-0.5 flex-shrink-0" />
                               <span className="leading-tight">
                                 {isExterna 
-                                  ? equipamentos.find(e => e.id === event.equipamento_id)?.tipo 
-                                  : (Array.isArray(event.equipamentos) ? event.equipamentos[0]?.tipo : event.equipamentos?.tipo)}<br/>
+                                  ? (equipamentos.find(e => e.id === (event as any).equipamento_id)?.tipo || 'Equipamento não encontrado')
+                                  : (Array.isArray(event.equipamentos) ? event.equipamentos[0]?.tipo : event.equipamentos?.tipo) || 'S/ Equipamento'}<br/>
                                 <span className="text-gray-400">
                                   {isExterna 
-                                    ? equipamentos.find(e => e.id === event.equipamento_id)?.bairro 
-                                    : (Array.isArray(event.equipamentos) ? event.equipamentos[0]?.bairro : event.equipamentos?.bairro)}
+                                    ? (equipamentos.find(e => e.id === (event as any).equipamento_id)?.bairro || '')
+                                    : (Array.isArray(event.equipamentos) ? event.equipamentos[0]?.bairro : event.equipamentos?.bairro) || ''}
                                 </span>
                               </span>
                             </div>
@@ -412,10 +413,10 @@ export default function Agendamentos() {
                                   <MapPin className="w-3 h-3 mr-1 text-gray-400" />
                                   <span className="truncate">
                                     {isExterna 
-                                      ? equipamentos.find(e => e.id === event.equipamento_id)?.tipo 
-                                      : (Array.isArray(event.equipamentos) ? event.equipamentos[0]?.tipo : event.equipamentos?.tipo)} - {isExterna 
-                                        ? equipamentos.find(e => e.id === event.equipamento_id)?.bairro 
-                                        : (Array.isArray(event.equipamentos) ? event.equipamentos[0]?.bairro : event.equipamentos?.bairro)}
+                                      ? (equipamentos.find(e => e.id === (event as any).equipamento_id)?.tipo || 'N/A')
+                                      : (Array.isArray(event.equipamentos) ? event.equipamentos[0]?.tipo : event.equipamentos?.tipo) || 'N/A'} - {isExterna 
+                                        ? (equipamentos.find(e => e.id === (event as any).equipamento_id)?.bairro || 'N/A')
+                                        : (Array.isArray(event.equipamentos) ? event.equipamentos[0]?.bairro : event.equipamentos?.bairro) || 'N/A'}
                                   </span>
                                 </div>
                                 {isExterna && (

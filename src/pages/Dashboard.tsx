@@ -70,7 +70,7 @@ export default function Dashboard() {
           { data: scheduleData }
         ] = await Promise.all([
           supabase.from('alunos').select('*', { count: 'exact', head: true }),
-          supabase.from('turmas').select('*', { count: 'exact', head: true }).eq('status', 'ativa'),
+          supabase.from('turmas').select('*', { count: 'exact', head: true }).eq('status', 'Em Funcionamento'),
           supabase.from('modalidades').select('*', { count: 'exact', head: true }),
           supabase.from('equipamentos').select('*', { count: 'exact', head: true }),
           supabase.from('matriculas').select('*', { count: 'exact', head: true }).eq('status', 'ativa'),
@@ -81,7 +81,7 @@ export default function Dashboard() {
             matriculas (count),
             professor_id,
             turmas_auxiliares (funcionario_id)
-          `),
+          `).eq('status', 'Em Funcionamento'),
           supabase.from('frequencia')
             .select('data_aula, status_aula')
             .gte('data_aula', fourWeeksAgo.toISOString().split('T')[0])
@@ -97,7 +97,7 @@ export default function Dashboard() {
             equipamentos (bairro, tipo),
             professor_id,
             turmas_auxiliares (funcionario_id)
-          `).eq('status', 'ativa')
+          `).eq('status', 'Em Funcionamento')
         ]);
 
         // Filter data based on permissions

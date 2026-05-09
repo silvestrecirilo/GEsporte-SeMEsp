@@ -162,12 +162,18 @@ export default function NovaTurma() {
   const { data: professores } = useQuery({
     queryKey: ['professores-select'],
     queryFn: async () => {
-      const { data } = await supabase
+      // Fetch all staff and filter in JS to be more robust with casing/partial matches
+      const { data, error } = await supabase
         .from('funcionarios')
-        .select('id, nome')
-        .or('cargo.eq.Professor,role.eq.professor')
+        .select('id, nome, cargo, role')
         .order('nome');
-      return data || [];
+      
+      if (error) return [];
+      
+      return data.filter(f => 
+        f.role === 'professor' || 
+        f.cargo?.toLowerCase().includes('professor')
+      ) || [];
     }
   });
 

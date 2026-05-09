@@ -43,7 +43,7 @@ export default function Modalidades() {
       
       turmas?.forEach(t => {
         if (!statsMap[t.modalidade_id]) statsMap[t.modalidade_id] = { turmas: 0, alunos: 0 };
-        if (t.status === 'ativa') statsMap[t.modalidade_id].turmas++;
+        if (t.status === 'Em Funcionamento') statsMap[t.modalidade_id].turmas++;
         
         const count = matriculas?.filter(m => m.turma_id === t.id && m.status === 'ativa').length || 0;
         statsMap[t.modalidade_id].alunos += count;

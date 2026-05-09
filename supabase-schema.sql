@@ -51,7 +51,7 @@ create table if not exists public.turmas (
   hora_fim time not null,
   professor_id uuid references public.funcionarios(id) on delete cascade not null,
   professor_auxiliar_id uuid references public.funcionarios(id) on delete set null,
-  status text not null default 'ativa' check (status in ('ativa', 'inativa', 'cancelada')),
+  status text not null default 'Em Funcionamento' check (status in ('Em Funcionamento', 'Inativa', 'Fechada')),
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
@@ -284,7 +284,7 @@ alter table public.professores alter column email drop not null;
 alter table public.alunos alter column email drop not null;
 alter table public.alunos alter column telefone drop not null;
 alter table public.turmas drop column if exists bairro;
-alter table public.turmas add column if not exists status text not null default 'ativa' check (status in ('ativa', 'inativa', 'cancelada'));
+alter table public.turmas add column if not exists status text not null default 'Em Funcionamento' check (status in ('Em Funcionamento', 'Inativa', 'Fechada'));
 
 -- 9. Indices for performance
 create index if not exists idx_funcionarios_nome on public.funcionarios(nome);

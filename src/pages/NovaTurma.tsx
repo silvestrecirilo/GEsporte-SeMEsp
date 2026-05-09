@@ -17,6 +17,7 @@ const turmaSchema = z.object({
   horaFim: z.string().min(1, 'Horário de término é obrigatório'),
   professorId: z.string().min(1, 'Professor responsável é obrigatório'),
   professoresAuxiliares: z.array(z.string()).optional(),
+  status: z.enum(['Em Funcionamento', 'Inativa', 'Fechada']),
 });
 
 type TurmaFormData = z.infer<typeof turmaSchema>;
@@ -58,6 +59,7 @@ export default function NovaTurma() {
       codigo: '',
       diasSemana: [],
       professoresAuxiliares: [],
+      status: 'Em Funcionamento',
     }
   });
 
@@ -98,6 +100,7 @@ export default function NovaTurma() {
             horaFim: data.hora_fim?.substring(0, 5) || '',
             professorId: data.professor_id || '',
             professoresAuxiliares: data.turmas_auxiliares?.map((a: any) => a.funcionario_id) || [],
+            status: data.status || 'Em Funcionamento',
           });
         }
       } catch (error) {
@@ -178,7 +181,7 @@ export default function NovaTurma() {
         dias_semana: data.diasSemana,
         hora_inicio: data.horaInicio,
         hora_fim: data.horaFim,
-        status: 'ativa'
+        status: data.status
       };
 
       let turmaId = id;
@@ -286,6 +289,16 @@ export default function NovaTurma() {
                 ))}
               </select>
               {errors.equipamentoId && <p className="text-red-500 text-xs">{errors.equipamentoId.message}</p>}
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-700">Status da Turma</label>
+              <select {...register('status')} className="w-full px-3 py-2 border rounded-md focus:ring-emerald-500 focus:border-emerald-500 bg-white">
+                <option value="Em Funcionamento">Em Funcionamento</option>
+                <option value="Inativa">Inativa</option>
+                <option value="Fechada">Fechada</option>
+              </select>
+              {errors.status && <p className="text-red-500 text-xs">{errors.status.message}</p>}
             </div>
           </div>
         </div>

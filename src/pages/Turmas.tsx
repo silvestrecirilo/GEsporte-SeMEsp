@@ -95,7 +95,7 @@ export default function Turmas() {
   const handleExportCSV = () => {
     if (!turmas || turmas.length === 0) return;
     
-    const headers = ['Código', 'Modalidade', 'Bairro', 'Dias da Semana', 'Horário', 'Professor', 'Alunos Matriculados'];
+    const headers = ['Código', 'Modalidade', 'Bairro', 'Dias da Semana', 'Horário', 'Professor', 'Alunos Matriculados', 'Status'];
     const csvContent = [
       headers.join(','),
       ...turmas.map(t => {
@@ -110,7 +110,8 @@ export default function Turmas() {
           `"${dias}"`,
           `"${horario}"`,
           `"${t.professores?.nome || ''}"`,
-          matriculados
+          matriculados,
+          `"${t.status || 'Em Funcionamento'}"`
         ].join(',');
       })
     ].join('\n');
@@ -195,6 +196,7 @@ export default function Turmas() {
                 <th className="px-6 py-4 font-medium hidden md:table-cell">Bairro</th>
                 <th className="px-6 py-4 font-medium hidden sm:table-cell">Dias e Horário</th>
                 <th className="px-6 py-4 font-medium hidden sm:table-cell">Professor</th>
+                <th className="px-6 py-4 font-medium">Status</th>
                 <th className="px-6 py-4 font-medium text-right">Ações</th>
               </tr>
             </thead>
@@ -244,6 +246,17 @@ export default function Turmas() {
                     </td>
                     <td className="px-6 py-4 text-gray-600 hidden sm:table-cell">
                       {turma.professores?.nome || 'Não atribuído'}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        turma.status === 'Inativa' 
+                          ? 'bg-amber-100 text-amber-800' 
+                          : turma.status === 'Fechada'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-emerald-100 text-emerald-800'
+                      }`}>
+                        {turma.status || 'Em Funcionamento'}
+                      </span>
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex justify-end items-center space-x-2">

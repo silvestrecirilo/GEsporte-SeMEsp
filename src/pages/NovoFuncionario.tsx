@@ -4,15 +4,13 @@ import * as z from 'zod';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Save, ArrowLeft, User, Briefcase, Phone, Mail, MapPin } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { useNotification } from '../components/Notification';
 
 const funcionarioSchema = z.object({
   nome: z.string().min(3, 'Nome é obrigatório'),
-  cargo: z.enum(['Professor', 'Administrativo'], {
-    message: 'Selecione um cargo válido',
-  }),
+  cargo: z.string().min(1, 'Cargo é obrigatório'),
   email: z.string().email('Email inválido').optional().or(z.literal('')),
   telefone: z.string().optional().or(z.literal('')),
   permissoes: z.array(z.string()),
@@ -35,6 +33,7 @@ export default function NovoFuncionario() {
   const navigate = useNavigate();
   const { id } = useParams();
   const { showNotification } = useNotification();
+  const queryClient = useQueryClient();
   const isEditing = Boolean(id);
   
   const {
@@ -64,7 +63,7 @@ export default function NovoFuncionario() {
     if (funcionario) {
       reset({
         nome: funcionario.nome,
-        cargo: funcionario.cargo as 'Professor' | 'Administrativo',
+        cargo: funcionario.cargo || '',
         email: funcionario.email || '',
         telefone: funcionario.telefone || '',
         permissoes: funcionario.permissoes || [],
@@ -74,32 +73,30 @@ export default function NovoFuncionario() {
 
   const onSubmit = async (data: FuncionarioFormData) => {
     try {
+      const payload = {
+        nome: data.nome,
+        cargo: data.cargo,
+        email: data.email || null,
+        telefone: data.telefone || null,
+        permissoes: data.permissoes,
+        role: data.cargo.toLowerCase().includes('prof') ? 'professor' : 'funcionario'
+      };
+
       if (isEditing) {
         const { error } = await supabase
           .from('funcionarios')
-          .update({
-            nome: data.nome,
-            cargo: data.cargo,
-            email: data.email || null,
-            telefone: data.telefone || null,
-            permissoes: data.permissoes,
-            role: data.cargo === 'Professor' ? 'professor' : 'funcionario'
-          })
+          .update(payload)
           .eq('id', id);
         
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('funcionarios').insert([{
-          nome: data.nome,
-          cargo: data.cargo,
-          email: data.email || null,
-          telefone: data.telefone || null,
-          permissoes: data.permissoes,
-          role: data.cargo === 'Professor' ? 'professor' : 'funcionario'
-        }]);
-        
+        const { error } = await supabase.from('funcionarios').insert([payload]);
         if (error) throw error;
       }
+      
+      // Invalidate queries to update UI
+      queryClient.invalidateQueries({ queryKey: ['funcionarios'] });
+      queryClient.invalidateQueries({ queryKey: ['professores-select'] });
       
       showNotification('success', isEditing ? 'Funcionário atualizado com sucesso!' : 'Funcionário cadastrado com sucesso!');
       navigate('/funcionarios');
@@ -162,7 +159,10 @@ export default function NovoFuncionario() {
                 >
                   <option value="">Selecione um cargo</option>
                   <option value="Professor">Professor</option>
+                  <option value="Professor Substituto">Professor Substituto</option>
+                  <option value="Equipe Técnica">Equipe Técnica</option>
                   <option value="Administrativo">Administrativo</option>
+                  <option value="Coordenador">Coordenador</option>
                 </select>
                 <Briefcase className="w-5 h-5 text-gray-400 absolute left-3 top-2.5 pointer-events-none" />
               </div>

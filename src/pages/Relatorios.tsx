@@ -5,8 +5,12 @@ import { supabase } from '../lib/supabase';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, getDay, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
+import { useNotification } from '../components/Notification';
+
 export default function Relatorios() {
+  const { showNotification } = useNotification();
   const [activeTab, setActiveTab] = useState('alunos');
+  const [isGenerating, setIsGenerating] = useState(false);
   const [selectedTurmaId, setSelectedTurmaId] = useState('');
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -31,12 +35,51 @@ export default function Relatorios() {
   const { data: turmas } = useQuery({
     queryKey: ['turmas-relatorio'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const normalizeDay = (day: string) => {
+        if (!day) return '';
+        const d = day.trim().toLowerCase();
+        if (d.startsWith('seg')) return 'Segunda';
+        if (d.startsWith('ter')) return 'Terça';
+        if (d.startsWith('qua')) return 'Quarta';
+        if (d.startsWith('qui')) return 'Quinta';
+        if (d.startsWith('sex')) return 'Sexta';
+        if (d.startsWith('sab')) return 'Sábado';
+        if (d.startsWith('dom')) return 'Domingo';
+        return day;
+      };
+
+      const checkStatus = (status: string) => {
+        const s = (status || '').toLowerCase();
+        return !s || s.includes('funcionamento') || s.includes('ativa');
+      };
+
+      let res = await supabase
         .from('turmas')
-        .select('*, modalidades(nome), equipamentos(bairro)')
-        .eq('status', 'Em Funcionamento');
-      if (error) throw error;
-      return data;
+        .select('*, modalidades(nome), equipamentos(bairro), turmas_auxiliares(funcionario_id), professores:funcionarios!professor_id(nome)');
+      
+      if (res.error) {
+        res = await supabase.from('turmas').select('*, modalidades(nome), equipamentos(bairro)');
+      }
+      
+      if (res.data) {
+        return res.data.filter((t: any) => checkStatus(t.status)).map((t: any) => {
+          let dias = t.dias_semana;
+          if (typeof dias === 'string') {
+            dias = dias.replace(/{|}/g, '').split(',').map((s: string) => s.trim());
+          }
+          if (Array.isArray(dias)) {
+            dias = dias.map(normalizeDay);
+          }
+
+          return {
+            ...t,
+            horario_inicio: t.horario_inicio || t.hora_inicio || '00:00',
+            horario_fim: t.horario_fim || t.hora_fim || '00:00',
+            dias_semana: dias || []
+          };
+        });
+      }
+      return [];
     }
   });
 
@@ -85,19 +128,57 @@ export default function Relatorios() {
 
       if (fError) throw fError;
 
-      // Get turma details for class days
+      const normalizeDay = (day: string) => {
+        if (!day) return '';
+        const d = day.trim().toLowerCase();
+        if (d.startsWith('seg')) return 'Segunda';
+        if (d.startsWith('ter')) return 'Terça';
+        if (d.startsWith('qua')) return 'Quarta';
+        if (d.startsWith('qui')) return 'Quinta';
+        if (d.startsWith('sex')) return 'Sexta';
+        if (d.startsWith('sab')) return 'Sábado';
+        if (d.startsWith('dom')) return 'Domingo';
+        return day;
+      };
+
       const { data: turma, error: tError } = await supabase
         .from('turmas')
-        .select('*, modalidades(nome), equipamentos(bairro), professores:professor_id(nome)')
+        .select('*, modalidades(nome), equipamentos(bairro), professores:funcionarios!professor_id(nome)')
         .eq('id', selectedTurmaId)
         .single();
 
-      if (tError) throw tError;
+      let baseTurma = turma;
+      if (tError) {
+        const { data: simpleTurma, error: simpleError } = await supabase
+          .from('turmas')
+          .select('*, modalidades(nome), equipamentos(bairro)')
+          .eq('id', selectedTurmaId)
+          .single();
+        
+        if (simpleError) throw simpleError;
+        baseTurma = simpleTurma;
+      }
+
+      // Senior expert normalization
+      let dias = baseTurma.dias_semana;
+      if (typeof dias === 'string') {
+        dias = dias.replace(/{|}/g, '').split(',').map((s: string) => s.trim());
+      }
+      if (Array.isArray(dias)) {
+        dias = dias.map(normalizeDay);
+      }
+
+      const normalizedTurma = {
+        ...baseTurma,
+        horario_inicio: baseTurma.horario_inicio || baseTurma.hora_inicio || '00:00',
+        horario_fim: baseTurma.horario_fim || baseTurma.hora_fim || '00:00',
+        dias_semana: dias || []
+      };
 
       return {
         students: matriculas.map(m => m.alunos).sort((a: any, b: any) => a.nome.localeCompare(b.nome)),
         attendance: frequencia,
-        turma: turma
+        turma: normalizedTurma
       };
     },
     enabled: activeTab === 'frequencia' && !!selectedTurmaId
@@ -387,7 +468,7 @@ export default function Relatorios() {
                     ))}
                   </select>
                 </div>
-                <div className="flex items-end">
+                <div className="flex items-end gap-2">
                   <button
                     onClick={handlePrint}
                     disabled={!selectedTurmaId || isLoadingAttendance}
@@ -395,6 +476,33 @@ export default function Relatorios() {
                   >
                     <Printer className="w-5 h-5 mr-2" />
                     Imprimir Ficha
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!selectedTurmaId) return;
+                      setIsGenerating(true);
+                      try {
+                        const { error } = await supabase.rpc('gerar_ficha_presenca', {
+                          p_mes: selectedMonth + 1,
+                          p_ano: selectedYear,
+                          p_turma_id: selectedTurmaId
+                        });
+                        if (error) throw error;
+                        showNotification('success', 'Ficha gerada com sucesso!', 'Todos os alunos foram pré-marcados com falta para os dias letivos.');
+                        // Refetch
+                      } catch (error: any) {
+                        console.error(error);
+                        showNotification('error', 'Falha ao gerar ficha', error.message);
+                      } finally {
+                        setIsGenerating(false);
+                      }
+                    }}
+                    disabled={!selectedTurmaId || isGenerating}
+                    className="flex items-center justify-center px-4 py-2 bg-emerald-100 text-emerald-700 rounded-md hover:bg-emerald-200 transition-colors disabled:opacity-50"
+                    title="Preenche o banco de dados com faltas automáticas para todos os dias da turma no mês selecionado"
+                  >
+                    <Calendar className="w-5 h-5 mr-2" />
+                    {isGenerating ? 'Gerando...' : 'Liberar Mês'}
                   </button>
                 </div>
               </div>

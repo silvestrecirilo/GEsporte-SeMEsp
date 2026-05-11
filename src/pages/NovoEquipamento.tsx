@@ -64,13 +64,21 @@ export default function NovoEquipamento() {
 
   const onSubmit = async (data: EquipamentoFormData) => {
     try {
-      const payload = {
+      const payload: any = {
         tipo: data.tipo,
         bairro: data.bairro,
         endereco: data.endereco,
-        latitude: data.latitude,
-        longitude: data.longitude
       };
+
+      // Handle optional numbers correctly (NaN check)
+      if (typeof data.latitude === 'number' && !isNaN(data.latitude)) {
+        payload.latitude = data.latitude;
+      }
+      if (typeof data.longitude === 'number' && !isNaN(data.longitude)) {
+        payload.longitude = data.longitude;
+      }
+
+      console.log('Salvando equipamento:', payload);
 
       if (id) {
         const { error } = await supabase

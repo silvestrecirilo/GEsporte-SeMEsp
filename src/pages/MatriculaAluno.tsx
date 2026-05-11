@@ -32,10 +32,27 @@ export default function MatriculaAluno() {
         }
 
         // Fetch turmas
-        const { data: turmasData } = await supabase
-          .from('turmas')
-          .select('*, modalidades(nome), equipamentos(tipo)')
-          .eq('status', 'Em Funcionamento');
+        const fetchTurmas = async () => {
+          let res = await supabase
+            .from('turmas')
+            .select('*, modalidades(nome), equipamentos(tipo)')
+            .eq('status', 'Em Funcionamento');
+          
+          if (res.error && (res.error.message.includes('status') || res.error.message.includes('schema cache'))) {
+            res = await supabase.from('turmas').select('*, modalidades(nome), equipamentos(tipo)');
+          }
+
+          if (res.data) {
+            res.data = res.data.map((t: any) => ({
+              ...t,
+              horario_inicio: t.horario_inicio || t.hora_inicio,
+              horario_fim: t.horario_fim || t.hora_fim
+            }));
+          }
+          return res;
+        };
+        
+        const { data: turmasData } = await fetchTurmas();
         
         if (turmasData) setAvailableTurmas(turmasData);
       } catch (error) {

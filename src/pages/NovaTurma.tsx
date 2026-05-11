@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Save, ArrowLeft, Calendar, Clock, MapPin, Users } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { useNotification } from '../components/Notification';
 
@@ -45,6 +45,7 @@ export default function NovaTurma() {
   const { id } = useParams();
   const { showNotification } = useNotification();
   const [isLoading, setIsLoading] = useState(false);
+  const queryClient = useQueryClient();
   
   const {
     register,
@@ -77,44 +78,24 @@ export default function NovaTurma() {
     setValue('horaFim', `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`);
   };
 
-  useEffect(() => {
-    async function fetchTurma() {
-      if (!id) return;
-      setIsLoading(true);
-      try {
-        const { data, error } = await supabase
-          .from('turmas')
-          .select('*, turmas_auxiliares(funcionario_id)')
-          .eq('id', id)
-          .single();
-
-        if (error) throw error;
-
-        if (data) {
-          reset({
-            codigo: data.codigo || '',
-            modalidadeId: data.modalidade_id,
-            equipamentoId: data.equipamento_id,
-            diasSemana: Array.isArray(data.dias_semana) ? data.dias_semana : [data.dias_semana],
-            horaInicio: data.hora_inicio?.substring(0, 5) || '',
-            horaFim: data.hora_fim?.substring(0, 5) || '',
-            professorId: data.professor_id || '',
-            professoresAuxiliares: data.turmas_auxiliares?.map((a: any) => a.funcionario_id) || [],
-            status: data.status || 'Em Funcionamento',
-          });
-        }
-      } catch (error) {
-        console.error('Erro ao buscar turma:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
-    fetchTurma();
-  }, [id, reset]);
+  const { data: turma, isLoading: turmaLoading } = useQuery({
+    queryKey: ['turma', id],
+    queryFn: async () => {
+      if (!id) return null;
+      const { data, error } = await supabase
+        .from('turmas')
+        .select('*, turmas_auxiliares(funcionario_id)')
+        .eq('id', id)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!id,
+    staleTime: 0 // Ensure we always get fresh data when editing
+  });
 
   // Fetch Modalidades
-  const { data: modalidades } = useQuery({
+  const { data: modalidades, isLoading: modalidadesLoading } = useQuery({
     queryKey: ['modalidades-select'],
     queryFn: async () => {
       const { data } = await supabase.from('modalidades').select('id, nome').order('nome');
@@ -123,7 +104,7 @@ export default function NovaTurma() {
   });
 
   // Fetch Equipamentos
-  const { data: equipamentos } = useQuery({
+  const { data: equipamentos, isLoading: equipamentosLoading } = useQuery({
     queryKey: ['equipamentos-select'],
     queryFn: async () => {
       const { data } = await supabase.from('equipamentos').select('id, tipo, bairro, endereco').order('bairro');
@@ -131,10 +112,61 @@ export default function NovaTurma() {
     }
   });
 
+  // Fetch Professores
+  const { data: professores, isLoading: professoresLoading } = useQuery({
+    queryKey: ['professores-select'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('funcionarios')
+        .select('id, nome, cargo, role, permissoes')
+        .order('nome');
+      
+      if (error) return [];
+      
+      const filtered = data.filter(f => 
+        f.role === 'professor' || 
+        f.cargo?.toLowerCase().includes('prof') ||
+        f.cargo?.toLowerCase().includes('instru') ||
+        f.permissoes?.includes('frequencia')
+      );
+
+      return filtered.length > 0 ? filtered : data;
+    }
+  });
+
+  // Effect to populate form when editing
+  useEffect(() => {
+    if (turma && modalidades && equipamentos && professores) {
+      // Robust normalization for Postgres array strings
+      let dias = turma.dias_semana;
+      if (typeof dias === 'string') {
+        dias = dias.replace(/{|}/g, '').split(',').map((s: string) => s.trim());
+      }
+      if (!Array.isArray(dias)) {
+        dias = [dias];
+      }
+
+      const h_inicio = turma.hora_inicio || (turma as any).horario_inicio;
+      const h_fim = turma.hora_fim || (turma as any).horario_fim;
+      
+      reset({
+        codigo: turma.codigo || '',
+        modalidadeId: turma.modalidade_id || '',
+        equipamentoId: turma.equipamento_id || '',
+        diasSemana: dias,
+        horaInicio: h_inicio?.substring(0, 5) || '',
+        horaFim: h_fim?.substring(0, 5) || '',
+        professorId: turma.professor_id || '',
+        professoresAuxiliares: turma.turmas_auxiliares?.map((a: any) => a.funcionario_id) || [],
+        status: turma.status || 'Em Funcionamento',
+      });
+    }
+  }, [turma, modalidades, equipamentos, professores, reset]);
+
   // Auto-generate code
   useEffect(() => {
     async function generateCode() {
-      if (!id && selectedModalidadeId && !currentCodigo && modalidades) {
+      if (!id && selectedModalidadeId && !currentCodigo && modalidades && modalidades.length > 0) {
         const mod = modalidades.find(m => m.id === selectedModalidadeId);
         
         if (mod) {
@@ -158,25 +190,6 @@ export default function NovaTurma() {
   // Filtered Equipamentos based on selected modality (mock logic for now)
   const filteredEquipamentos = equipamentos || [];
 
-  // Fetch Professores
-  const { data: professores } = useQuery({
-    queryKey: ['professores-select'],
-    queryFn: async () => {
-      // Fetch all staff and filter in JS to be more robust with casing/partial matches
-      const { data, error } = await supabase
-        .from('funcionarios')
-        .select('id, nome, cargo, role')
-        .order('nome');
-      
-      if (error) return [];
-      
-      return data.filter(f => 
-        f.role === 'professor' || 
-        f.cargo?.toLowerCase().includes('professor')
-      ) || [];
-    }
-  });
-
   const onSubmit = async (data: TurmaFormData) => {
     try {
       const turmaData: any = {
@@ -187,7 +200,7 @@ export default function NovaTurma() {
         dias_semana: data.diasSemana,
         hora_inicio: data.horaInicio,
         hora_fim: data.horaFim,
-        status: data.status
+        status: data.status,
       };
 
       let turmaId = id;
@@ -207,19 +220,11 @@ export default function NovaTurma() {
         }
       };
 
-      let saveResult = await performSave(turmaData);
+      const saveResult = await performSave(turmaData);
 
-      // Handle potential schema cache issue: if 'status' column is not found, retry without it
-      if (saveResult.error && (
-        saveResult.error.message.includes('column "status" of relation "turmas" does not exist') ||
-        saveResult.error.code === '42703'
-      )) {
-        console.warn('Coluna "status" não encontrada no cache do schema, tentando salvar sem ela.');
-        const { status: _, ...fallbackData } = turmaData;
-        saveResult = await performSave(fallbackData);
+      if (saveResult.error) {
+        throw saveResult.error;
       }
-
-      if (saveResult.error) throw saveResult.error;
 
       // Extract new ID if creating
       if (!id) {
@@ -240,25 +245,32 @@ export default function NovaTurma() {
       }
       
       showNotification('success', id ? 'Turma atualizada com sucesso!' : 'Turma cadastrada com sucesso!');
+      
+      // Invalidate all relevant queries
+      queryClient.invalidateQueries({ queryKey: ['turmas'] });
+      queryClient.invalidateQueries({ queryKey: ['turma', id] });
+      queryClient.invalidateQueries({ queryKey: ['turmas-with-auxiliares'] });
+      
       navigate('/turmas');
     } catch (error: any) {
       console.error('Erro ao salvar:', error);
       let errorMessage = error.message || 'Houve um problema ao conectar com o banco de dados.';
       
       if (error.code === '23505') {
-        if (error.message.includes('codigo')) {
-          errorMessage = 'Este código de turma já está em uso.';
-        } else {
-          errorMessage = 'Já existe um registro com estes dados únicos no sistema.';
-        }
+        errorMessage = 'Este código de turma já está em uso.';
       }
 
       showNotification('error', 'Erro ao salvar os dados', errorMessage);
     }
   };
 
-  if (isLoading) {
-    return <div className="flex items-center justify-center h-64">Carregando dados...</div>;
+  if (isLoading || turmaLoading || (id && (modalidadesLoading || equipamentosLoading || professoresLoading))) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 space-y-4">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600"></div>
+        <p className="text-gray-500 font-medium">Carregando dados da turma...</p>
+      </div>
+    );
   }
 
   return (

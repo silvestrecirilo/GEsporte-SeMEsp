@@ -1,632 +1,421 @@
-import { useState, useEffect, FormEvent } from 'react';
+import React from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
-import { Calendar, MapPin, Clock, Filter, ChevronLeft, ChevronRight, Activity, Plus, X, AlertCircle } from 'lucide-react';
+import { 
+  Calendar as CalendarIcon, 
+  Plus, 
+  Search, 
+  MapPin, 
+  Clock, 
+  Filter,
+  Trash2,
+  ChevronRight,
+  ChevronLeft,
+  Activity
+} from 'lucide-react';
 import { useNotification } from '../components/Notification';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
+
+const atividadeSchema = z.object({
+  titulo: z.string().min(3, 'Mínimo 3 caracteres'),
+  equipamentoId: z.string().uuid('Selecione um equipamento'),
+  diaSemana: z.string(),
+  horarioInicio: z.string(),
+  horarioFim: z.string(),
+  tipo: z.enum(['proprio', 'terceiros']),
+  descricao: z.string().optional(),
+});
+
+type AtividadeFormData = z.infer<typeof atividadeSchema>;
 
 export default function Agendamentos() {
   const { showNotification } = useNotification();
-  const [loading, setLoading] = useState(true);
-  const [turmas, setTurmas] = useState<any[]>([]);
-  const [equipamentos, setEquipamentos] = useState<any[]>([]);
-  const [atividadesExternas, setAtividadesExternas] = useState<any[]>([]);
-  const [selectedEquipamento, setSelectedEquipamento] = useState<string>('all');
-  const [viewType, setViewType] = useState<'semana' | 'dia'>('semana');
-  const [selectedDay, setSelectedDay] = useState<string>('Segunda');
-  const [showModal, setShowModal] = useState(false);
-  const [newActivity, setNewActivity] = useState({
-    titulo: '',
-    equipamento_id: '',
-    dia_semana: 'Segunda',
-    horario_inicio: '08:00',
-    horario_fim: '09:00',
-    tipo: 'proprio',
-    data_inicio: '',
-    data_fim: '',
-    descricao: ''
+  const queryClient = useQueryClient();
+  const [showNewModal, setShowNewModal] = React.useState(false);
+  const [searchTerm, setSearchTerm] = React.useState('');
+  const [filterEquipamento, setFilterEquipamento] = React.useState('all');
+  const [view, setView] = React.useState<'list' | 'week'>('week');
+
+  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<AtividadeFormData>({
+    resolver: zodResolver(atividadeSchema),
+    defaultValues: {
+      diaSemana: 'Segunda',
+      tipo: 'proprio'
+    }
   });
-  
-  const diasSemana = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 
-  async function fetchData() {
-    try {
-      // console.log('Buscando dados de agendamentos...');
-      // Fetch equipments first
-      const { data: eqData, error: eqError } = await supabase
-        .from('equipamentos')
-        .select('id, bairro, tipo')
-        .order('bairro');
-      
-      if (eqError) throw eqError;
-      // console.log('Equipamentos carregados:', eqData?.length || 0);
-      if (eqData) setEquipamentos(eqData);
+  const { data: equipamentos } = useQuery({
+    queryKey: ['equipamentos-select'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('equipamentos').select('id, bairro, tipo').order('bairro');
+      if (error) throw error;
+      return data;
+    }
+  });
 
-      // Fetch external activities
-      const { data: atData, error: atError } = await supabase
-        .from('atividades_externas')
-        .select('*');
-      
-      if (atError) {
-        console.warn('Erro ao buscar atividades externas:', atError);
-      } else if (atData) {
-        setAtividadesExternas(atData);
-      }
-
-      // Fetch turmas with a fallback if 'status' column is not yet recognized
-      let turmasQuery = supabase.from('turmas').select(`
-        id,
-        dias_semana,
-        horario_inicio,
-        horario_fim,
-        modalidades (nome),
-        equipamentos (id, bairro, tipo),
-        status
+  const { data: atividades, isLoading } = useQuery({
+    queryKey: ['atividades-externas', filterEquipamento],
+    queryFn: async () => {
+      let query = supabase.from('atividades_externas').select(`
+        *,
+        equipamentos (id, bairro, tipo)
       `);
 
-      // Try filtering by status first
-      const { data: tData, error: tError } = await turmasQuery.eq('status', 'Em Funcionamento');
-
-      if (tError) {
-        console.warn('Erro ao buscar turmas com filtro de status, tentando sem filtro:', tError);
-        // Fallback: try without the status filter if the column is problematic
-        const { data: fallbackData, error: fallbackError } = await supabase.from('turmas').select(`
-          id,
-          dias_semana,
-          horario_inicio,
-          horario_fim,
-          modalidades (nome),
-          equipamentos (id, bairro, tipo)
-        `);
-        
-        if (!fallbackError && fallbackData) {
-          setTurmas(fallbackData);
-        } else if (fallbackError) {
-          console.error('Erro total ao buscar turmas:', fallbackError);
-        }
-      } else if (tData) {
-        setTurmas(tData);
+      if (filterEquipamento !== 'all') {
+        query = query.eq('equipamento_id', filterEquipamento);
       }
-    } catch (error) {
-      console.error('Erro ao buscar agendamentos:', error);
-      showNotification('error', 'Erro ao carregar dados', 'Algumas informações podem estar incompletas devido a problemas na conexão ou no banco de dados.');
-    } finally {
-      setLoading(false);
-    }
-  }
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const handleCreateActivity = async (e: FormEvent) => {
-    e.preventDefault();
-
-    if (newActivity.horario_fim <= newActivity.horario_inicio) {
-      showNotification('warning', 'Horário inválido', 'O horário de fim deve ser posterior ao horário de início.');
-      return;
-    }
-
-    // Check for conflicts with regular classes (turmas)
-    const conflictWithTurma = turmas.find(t => 
-      t.equipamentos?.id === newActivity.equipamento_id &&
-      t.dias_semana?.includes(newActivity.dia_semana) &&
-      ((newActivity.horario_inicio < t.horario_fim) && (newActivity.horario_fim > t.horario_inicio))
-    );
-
-    // Check for conflicts with other external activities
-    const conflictWithExterna = atividadesExternas.find(a => {
-      const sameEquipment = a.equipamento_id === newActivity.equipamento_id;
-      const sameDay = a.dia_semana === newActivity.dia_semana;
-      const timeOverlap = (newActivity.horario_inicio < a.horario_fim) && (newActivity.horario_fim > a.horario_inicio);
-      
-      if (!sameEquipment || !sameDay || !timeOverlap) return false;
-
-      // If both have date ranges, check for date overlap
-      if (newActivity.data_inicio && newActivity.data_fim && a.data_inicio && a.data_fim) {
-        return (newActivity.data_inicio <= a.data_fim) && (newActivity.data_fim >= a.data_inicio);
-      }
-      
-      // If one is recurring (no dates) and the other has dates, it's a conflict on that day
-      return true;
-    });
-
-    if (conflictWithTurma || conflictWithExterna) {
-      const conflictName = conflictWithTurma ? `Turma: ${conflictWithTurma.modalidades?.nome}` : `Atividade: ${conflictWithExterna?.titulo}`;
-      showNotification('error', 'Conflito de horário', `Já existe uma atividade agendada neste local, dia e horário: ${conflictName}`);
-      return;
-    }
-
-    try {
-      const { error } = await supabase.from('atividades_externas').insert([newActivity]);
+      const { data, error } = await query.order('dia_semana');
       if (error) throw error;
-      showNotification('success', 'Atividade criada com sucesso!');
-      setShowModal(false);
-      setNewActivity({
-        titulo: '',
-        equipamento_id: '',
-        dia_semana: 'Segunda',
-        horario_inicio: '08:00',
-        horario_fim: '09:00',
-        tipo: 'proprio',
-        data_inicio: '',
-        data_fim: '',
-        descricao: ''
-      });
-      fetchData();
-    } catch (error: any) {
-      console.error('Erro ao criar atividade:', error);
-      showNotification('error', 'Erro ao criar atividade', error.message || 'Houve um problema ao conectar com o banco de dados.');
+      return data;
     }
+  });
+
+  const { data: turmas } = useQuery({
+    queryKey: ['turmas-agendamentos'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('turmas').select(`
+        id,
+        codigo,
+        modalidades (nome),
+        equipamentos (id, bairro, tipo),
+        dias_semana,
+        hora_inicio,
+        hora_fim,
+        status
+      `);
+      if (error) throw error;
+      return data?.filter((t: any) => {
+        const s = (t.status || '').toLowerCase();
+        const inactiveKeywords = ['inativa', 'fechada', 'encerrada', 'cancelada', 'suspensa'];
+        return !inactiveKeywords.some(keyword => s.includes(keyword));
+      }) || [];
+    }
+  });
+
+  const createAtividade = useMutation({
+    mutationFn: async (data: AtividadeFormData) => {
+      const { error } = await supabase.from('atividades_externas').insert([{
+        titulo: data.titulo,
+        equipamento_id: data.equipamentoId,
+        dia_semana: data.diaSemana,
+        horario_inicio: data.horarioInicio,
+        horario_fim: data.horarioFim,
+        tipo: data.tipo,
+        descricao: data.descricao
+      }]);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['atividades-externas'] });
+      showNotification('success', 'Atividade agendada!', 'O novo agendamento foi salvo com sucesso.');
+      setShowNewModal(false);
+      reset();
+    },
+    onError: (error: any) => {
+      showNotification('error', 'Falha ao agendar', error.message);
+    }
+  });
+
+  const deleteAtividade = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('atividades_externas').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['atividades-externas'] });
+      showNotification('success', 'Agendamento removido', 'A atividade foi excluída com sucesso.');
+    }
+  });
+
+  const days = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+
+  const onSubmit = (data: AtividadeFormData) => {
+    createAtividade.mutate(data);
   };
 
-  const filteredTurmas = selectedEquipamento === 'all' 
-    ? turmas 
-    : turmas.filter(t => {
-        const eq = t.equipamentos;
-        const eqId = Array.isArray(eq) ? eq[0]?.id : eq?.id;
-        return eqId === selectedEquipamento;
-      });
-
-  const filteredAtividades = selectedEquipamento === 'all'
-    ? atividadesExternas
-    : atividadesExternas.filter(a => a.equipamento_id === selectedEquipamento);
-
-  const getEquipmentUtilization = (equipmentId: string) => {
-    const eqTurmas = turmas.filter(t => {
-      // Supabase might return an object or an array for joined relations
-      const eq = t.equipamentos;
-      const eqId = Array.isArray(eq) ? eq[0]?.id : eq?.id;
-      return eqId === equipmentId;
-    });
-    const eqAtividades = atividadesExternas.filter(a => a.equipamento_id === equipmentId);
-    
-    const totalHours = eqTurmas.reduce((acc, t) => {
-      const start = parseInt(t.horario_inicio?.split(':')[0] || '0');
-      const end = parseInt(t.horario_fim?.split(':')[0] || '0');
-      return acc + (end - start) * (t.dias_semana?.length || 0);
-    }, 0) + eqAtividades.reduce((acc, a) => {
-      const start = parseInt(a.horario_inicio?.split(':')[0] || '0');
-      const end = parseInt(a.horario_fim?.split(':')[0] || '0');
-      return acc + (end - start);
-    }, 0);
-
-    // Assume 12h per day (8h to 20h) * 7 days = 84h capacity
-    return Math.min(Math.round((totalHours / 84) * 100), 100);
-  };
-
-  if (loading) {
-    return <div className="flex items-center justify-center h-64">Carregando agendamentos...</div>;
-  }
+  const filteredAtividades = (atividades || []).filter(a => 
+    a.titulo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    a.equipamentos?.bairro.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
     <div className="space-y-6 pb-12">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Agendamentos e Utilização</h1>
-          <p className="text-sm text-gray-500 mt-1">Ocupação dos equipamentos esportivos por dia e horário</p>
+          <h1 className="text-2xl font-bold text-gray-900">Agendamentos</h1>
+          <p className="text-sm text-gray-500">Gestão de atividades e ocupação dos equipamentos</p>
         </div>
-        
-        <div className="flex items-center space-x-3">
-          <div className="flex bg-gray-100 p-1 rounded-lg border border-gray-200">
-            <button
-              onClick={() => setViewType('semana')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                viewType === 'semana' 
-                  ? 'bg-white text-emerald-600 shadow-sm' 
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Semana
-            </button>
-            <button
-              onClick={() => setViewType('dia')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                viewType === 'dia' 
-                  ? 'bg-white text-emerald-600 shadow-sm' 
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Dia
-            </button>
-          </div>
-
+        <div className="flex items-center gap-2">
           <button
-            onClick={() => setShowModal(true)}
-            className="flex items-center justify-center px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition-colors shadow-sm"
+            onClick={() => setView(view === 'list' ? 'week' : 'list')}
+            className="flex items-center px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50"
           >
-            <Plus className="w-4 h-4 mr-2" />
-            Nova Atividade
+            {view === 'list' ? 'Ver Quadro' : 'Ver Lista'}
           </button>
+          <button
+            onClick={() => setShowNewModal(true)}
+            className="flex items-center px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
+          >
+            <Plus className="w-5 h-5 mr-2" />
+            Novo Agendamento
+          </button>
+        </div>
+      </div>
 
-          <div className="flex items-center space-x-2 bg-white p-2 rounded-lg border border-gray-200 shadow-sm">
-            <Filter className="w-4 h-4 text-gray-400 ml-2" />
+      <div className="flex flex-col md:flex-row gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+        <div className="flex-1 relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+          <input
+            type="text"
+            placeholder="Buscar por título ou bairro..."
+            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+        <div className="flex gap-2">
+          <div className="relative">
+            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
             <select
-              value={selectedEquipamento}
-              onChange={(e) => setSelectedEquipamento(e.target.value)}
-              className="text-sm border-none focus:ring-0 bg-transparent pr-8"
+              className="pl-9 pr-8 py-2 border border-gray-200 rounded-lg appearance-none bg-white text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+              value={filterEquipamento}
+              onChange={(e) => setFilterEquipamento(e.target.value)}
             >
-              <option value="all">Todos os Equipamentos</option>
-              {equipamentos.map(eq => (
-                <option key={eq.id} value={eq.id}>
-                  {eq.tipo} - {eq.bairro}
-                </option>
+              <option value="all">Todos Equipamentos</option>
+              {equipamentos?.map(eq => (
+                <option key={eq.id} value={eq.id}>{eq.bairro} ({eq.tipo})</option>
               ))}
             </select>
           </div>
         </div>
       </div>
 
-      {viewType === 'dia' && (
-        <div className="flex overflow-x-auto pb-2 scrollbar-hide space-x-2">
-          {diasSemana.map(dia => (
-            <button
-              key={dia}
-              onClick={() => setSelectedDay(dia)}
-              className={`px-6 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all border ${
-                selectedDay === dia
-                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-md transform scale-105'
-                  : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-200'
-              }`}
-            >
-              {dia}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        {/* Utilization Summary */}
-        <div className="p-4 border-b border-gray-100 bg-gray-50/30">
-          <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center">
-            <Activity className="w-4 h-4 mr-2 text-emerald-600" />
-            Resumo de Utilização por Equipamento
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {equipamentos.slice(0, 4).map(eq => {
-              const util = getEquipmentUtilization(eq.id);
-              return (
-                <div key={eq.id} className="p-3 bg-white border border-gray-100 rounded-lg">
-                  <div className="flex justify-between text-xs font-medium text-gray-500 mb-2">
-                    <span className="truncate">{eq.tipo} - {eq.bairro}</span>
-                    <span>{util}%</span>
+      {view === 'week' ? (
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
+          <div className="min-w-[1200px]">
+            <div className="grid grid-cols-7 gap-4">
+              {days.map((day) => (
+                <div key={day} className="space-y-4">
+                  <div className="text-center font-bold text-gray-700 text-sm border-b pb-2 mb-4">
+                    {day}
                   </div>
-                  <div className="w-full bg-gray-100 rounded-full h-1.5">
-                    <div 
-                      className={`h-1.5 rounded-full ${util > 70 ? 'bg-orange-500' : 'bg-emerald-500'}`}
-                      style={{ width: `${util}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {viewType === 'semana' ? (
-          <div className="overflow-x-auto">
-            <div className="min-w-[1000px]">
-              <div className="grid grid-cols-7 border-b border-gray-100 bg-gray-50/50">
-                {diasSemana.map(dia => (
-                  <div key={dia} className="p-4 text-center font-bold text-gray-700 text-sm border-r border-gray-100 last:border-r-0">
-                    {dia}
-                  </div>
-                ))}
-              </div>
-              
-              <div className="grid grid-cols-7 min-h-[500px]">
-                {diasSemana.map(dia => {
-                  const dayTurmas = filteredTurmas.filter(t => t.dias_semana?.includes(dia));
-                  const dayAtividades = filteredAtividades.filter(a => a.dia_semana === dia);
-                  const allEvents = [
-                    ...dayTurmas.map(t => ({ ...t, eventType: 'turma' })),
-                    ...dayAtividades.map(a => ({ ...a, eventType: 'externa' }))
-                  ].sort((a, b) => a.horario_inicio.localeCompare(b.horario_inicio));
-
-                  return (
-                    <div key={dia} className="p-3 space-y-3 border-r border-gray-100 last:border-r-0 bg-white">
-                      {allEvents.map((event, idx) => {
-                        const isExterna = event.eventType === 'externa';
-                        const colorClass = isExterna 
-                          ? (event.tipo === 'terceiros' ? 'border-red-100 bg-red-50/50 text-red-700' : 'border-blue-100 bg-blue-50/50 text-blue-700')
-                          : 'border-emerald-100 bg-emerald-50/50 text-emerald-700';
-                        const iconColor = isExterna
-                          ? (event.tipo === 'terceiros' ? 'text-red-600' : 'text-blue-600')
-                          : 'text-emerald-600';
-
-                        return (
-                          <div 
-                            key={`${event.id}-${dia}-${idx}`}
-                            className={`p-3 rounded-lg border ${colorClass} transition-colors group relative`}
-                          >
-                            <div className={`flex items-center text-[10px] font-bold mb-1 ${iconColor}`}>
-                              <Clock className="w-3 h-3 mr-1" />
-                              {event.horario_inicio} - {event.horario_fim}
-                            </div>
-                            <div className="text-sm font-bold text-gray-900 leading-tight mb-1">
-                              {isExterna ? event.titulo : event.modalidades?.nome}
-                            </div>
-                            {isExterna && event.data_inicio && (
-                              <div className="text-[9px] text-gray-400 mb-1 flex items-center">
-                                <Calendar className="w-2.5 h-2.5 mr-1" />
-                                {new Date(event.data_inicio).toLocaleDateString()} {event.data_fim ? `- ${new Date(event.data_fim).toLocaleDateString()}` : ''}
-                              </div>
-                            )}
-                            <div className="text-[10px] text-gray-500 flex items-start">
-                              <MapPin className="w-2.5 h-2.5 mr-1 mt-0.5 flex-shrink-0" />
-                              <span className="leading-tight">
-                                {isExterna 
-                                  ? (equipamentos.find(e => e.id === (event as any).equipamento_id)?.tipo || 'Equipamento não encontrado')
-                                  : (Array.isArray(event.equipamentos) ? event.equipamentos[0]?.tipo : event.equipamentos?.tipo) || 'S/ Equipamento'}<br/>
-                                <span className="text-gray-400">
-                                  {isExterna 
-                                    ? (equipamentos.find(e => e.id === (event as any).equipamento_id)?.bairro || '')
-                                    : (Array.isArray(event.equipamentos) ? event.equipamentos[0]?.bairro : event.equipamentos?.bairro) || ''}
-                                </span>
-                              </span>
-                            </div>
-                            {isExterna && (
-                              <div className={`mt-2 text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded inline-block ${event.tipo === 'terceiros' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}`}>
-                                {event.tipo === 'terceiros' ? 'Terceiros' : 'Próprio'}
-                              </div>
-                            )}
+                  <div className="space-y-3">
+                    {/* Turmas do Sistema */}
+                    {turmas?.filter(t => t.dias_semana?.some((d: string) => d.includes(day)))
+                      .sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio))
+                      .map((t: any) => (
+                        <div key={t.id} className="p-3 bg-emerald-50 border border-emerald-100 rounded-lg group cursor-default">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[10px] font-bold text-emerald-700">
+                              {t.hora_inicio.substring(0, 5)} - {t.hora_fim.substring(0, 5)}
+                            </span>
+                            <span className="text-[9px] bg-emerald-200 text-emerald-900 px-1 rounded font-mono">
+                              {t.codigo}
+                            </span>
                           </div>
-                        );
-                      })}
-                      {allEvents.length === 0 && (
-                        <div className="flex flex-col items-center justify-center h-32 text-gray-300">
-                          <Calendar className="w-8 h-8 mb-2 opacity-20" />
-                          <span className="text-[10px] italic">Livre</span>
+                          <div className="text-sm font-bold text-gray-900 truncate">
+                            {t.modalidades?.nome}
+                          </div>
+                          <div className="text-[10px] text-gray-500 flex items-center mt-1">
+                            <MapPin className="w-2.5 h-2.5 mr-1" />
+                            <span className="truncate">{t.equipamentos?.bairro}</span>
+                          </div>
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="p-6">
-            <div className="flex items-center justify-between mb-8">
-              <div className="flex items-center space-x-4">
-                <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center">
-                  <Calendar className="w-6 h-6" />
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900">{selectedDay}</h2>
-                  <p className="text-sm text-gray-500">Programação detalhada por faixa de horário</p>
-                </div>
-              </div>
-            </div>
+                      ))}
 
-            <div className="space-y-12">
-              {['Manhã (07:00 - 12:00)', 'Tarde (12:00 - 18:00)', 'Noite (18:00 - 22:00)'].map(periodo => {
-                const range = periodo.match(/\((.*?)\)/)?.[1].split(' - ');
-                const startLimit = range?.[0] || '00:00';
-                const endLimit = range?.[1] || '23:59';
+                    {/* Atividades Externas / Agendamentos */}
+                    {filteredAtividades?.filter(a => a.dia_semana === day)
+                      .sort((a, b) => a.horario_inicio.localeCompare(b.horario_inicio))
+                      .map(a => (
+                        <div key={a.id} className={`p-3 border rounded-lg group relative ${
+                          a.tipo === 'terceiros' 
+                          ? 'bg-red-50 border-red-100' 
+                          : 'bg-blue-50 border-blue-100'
+                        }`}>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className={`text-[10px] font-bold ${a.tipo === 'terceiros' ? 'text-red-700' : 'text-blue-700'}`}>
+                              {a.horario_inicio.substring(0, 5)} - {a.horario_fim.substring(0, 5)}
+                            </span>
+                            <span className={`text-[9px] px-1 rounded font-mono ${a.tipo === 'terceiros' ? 'bg-red-200 text-red-900' : 'bg-blue-200 text-blue-900'}`}>
+                              {a.tipo === 'terceiros' ? 'EXT' : 'PRP'}
+                            </span>
+                          </div>
+                          <div className="text-sm font-bold text-gray-900 truncate">
+                            {a.titulo}
+                          </div>
+                          <div className="text-[10px] text-gray-500 flex items-center mt-1">
+                            <MapPin className="w-2.5 h-2.5 mr-1" />
+                            <span className="truncate">{a.equipamentos?.bairro}</span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              if (window.confirm('Excluir este agendamento?')) {
+                                deleteAtividade.mutate(a.id);
+                              }
+                            }}
+                            className="absolute -top-2 -right-2 p-1 bg-white border border-gray-200 text-red-500 rounded-full opacity-0 group-hover:opacity-100 shadow-sm transition-opacity"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
 
-                const dayTurmas = filteredTurmas.filter(t => t.dias_semana?.includes(selectedDay));
-                const dayAtividades = filteredAtividades.filter(a => a.dia_semana === selectedDay);
-                
-                const periodEvents = [
-                  ...dayTurmas.map(t => ({ ...t, eventType: 'turma' })),
-                  ...dayAtividades.map(a => ({ ...a, eventType: 'externa' }))
-                ].filter(event => {
-                  const start = event.horario_inicio;
-                  return start >= startLimit && start < endLimit;
-                }).sort((a, b) => a.horario_inicio.localeCompare(b.horario_inicio));
-
-                return (
-                  <div key={periodo} className="relative">
-                    <div className="flex items-center mb-4">
-                      <div className="h-px flex-1 bg-gray-100"></div>
-                      <span className="px-4 text-xs font-bold text-gray-400 uppercase tracking-widest">{periodo}</span>
-                      <div className="h-px flex-1 bg-gray-100"></div>
-                    </div>
-
-                    {periodEvents.length > 0 ? (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {periodEvents.map((event, idx) => {
-                          const isExterna = event.eventType === 'externa';
-                          const colorClass = isExterna 
-                            ? (event.tipo === 'terceiros' ? 'border-red-100 bg-red-50/30' : 'border-blue-100 bg-blue-50/30')
-                            : 'border-emerald-100 bg-emerald-50/30';
-                          
-                          return (
-                            <div key={`${event.id}-${idx}`} className={`p-4 rounded-xl border-2 ${colorClass} flex items-start space-x-4`}>
-                              <div className="flex-shrink-0 w-16 text-center">
-                                <div className="text-sm font-black text-gray-900">{event.horario_inicio}</div>
-                                <div className="text-[10px] text-gray-400 font-medium">{event.horario_fim}</div>
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="text-base font-bold text-gray-900 truncate">
-                                  {isExterna ? event.titulo : event.modalidades?.nome}
-                                </div>
-                                {isExterna && event.data_inicio && (
-                                  <div className="text-xs text-gray-400 mt-0.5 flex items-center">
-                                    <Calendar className="w-3 h-3 mr-1" />
-                                    {new Date(event.data_inicio).toLocaleDateString()} {event.data_fim ? `- ${new Date(event.data_fim).toLocaleDateString()}` : ''}
-                                  </div>
-                                )}
-                                <div className="flex items-center text-xs text-gray-500 mt-1">
-                                  <MapPin className="w-3 h-3 mr-1 text-gray-400" />
-                                  <span className="truncate">
-                                    {isExterna 
-                                      ? (equipamentos.find(e => e.id === (event as any).equipamento_id)?.tipo || 'N/A')
-                                      : (Array.isArray(event.equipamentos) ? event.equipamentos[0]?.tipo : event.equipamentos?.tipo) || 'N/A'} - {isExterna 
-                                        ? (equipamentos.find(e => e.id === (event as any).equipamento_id)?.bairro || 'N/A')
-                                        : (Array.isArray(event.equipamentos) ? event.equipamentos[0]?.bairro : event.equipamentos?.bairro) || 'N/A'}
-                                  </span>
-                                </div>
-                                {isExterna && (
-                                  <span className={`mt-2 inline-block text-[9px] font-bold uppercase px-2 py-0.5 rounded ${event.tipo === 'terceiros' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
-                                    {event.tipo === 'terceiros' ? 'Terceiros' : 'Próprio'}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="py-8 text-center text-gray-300 italic text-sm">
-                        Nenhuma atividade agendada para este período.
+                    {turmas?.filter(t => t.dias_semana?.some((d: string) => d.includes(day))).length === 0 &&
+                     filteredAtividades?.filter(a => a.dia_semana === day).length === 0 && (
+                      <div className="text-[10px] text-gray-400 text-center italic py-8 border border-dashed border-gray-100 rounded-lg">
+                        Livre
                       </div>
                     )}
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
           </div>
-        )}
-      </div>
-
-      {/* Legenda ou Resumo */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
-          <h3 className="text-sm font-bold text-emerald-800 mb-2 flex items-center">
-            <Activity className="w-4 h-4 mr-2" />
-            Turmas Regulares
-          </h3>
-          <p className="text-xs text-emerald-700">
-            Atividades fixas da secretaria de esportes.
-          </p>
         </div>
-        
-        <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
-          <h3 className="text-sm font-bold text-blue-800 mb-2 flex items-center">
-            <Calendar className="w-4 h-4 mr-2" />
-            Eventos Próprios
-          </h3>
-          <p className="text-xs text-blue-700">
-            Eventos pontuais organizados pela prefeitura.
-          </p>
+      ) : (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-100">
+                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Atividade</th>
+                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Equipamento</th>
+                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Data/Horário</th>
+                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Tipo</th>
+                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filteredAtividades?.map(a => (
+                <tr key={a.id} className="hover:bg-gray-50 transition-colors group">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center">
+                      <div className={`p-2 rounded-lg mr-3 ${a.tipo === 'terceiros' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
+                        <CalendarIcon className="w-4 h-4" />
+                      </div>
+                      <span className="font-medium text-gray-900">{a.titulo}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex flex-col">
+                      <span className="text-sm text-gray-900">{a.equipamentos?.bairro}</span>
+                      <span className="text-xs text-gray-500">{a.equipamentos?.tipo}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-gray-900">{a.dia_semana}</span>
+                      <span className="text-xs text-gray-500">{a.horario_inicio.substring(0, 5)} - {a.horario_fim.substring(0, 5)}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      a.tipo === 'terceiros' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'
+                    }`}>
+                      {a.tipo === 'terceiros' ? 'Eventos/Terceiros' : 'Atividade Própria'}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <button
+                      onClick={() => {
+                        if (window.confirm('Excluir este agendamento?')) {
+                          deleteAtividade.mutate(a.id);
+                        }
+                      }}
+                      className="text-gray-400 hover:text-red-600 transition-colors p-1"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {filteredAtividades?.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500 italic">
+                    Nenhum agendamento encontrado.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
+      )}
 
-        <div className="bg-red-50 p-4 rounded-xl border border-red-100">
-          <h3 className="text-sm font-bold text-red-800 mb-2 flex items-center">
-            <AlertCircle className="w-4 h-4 mr-2" />
-            Uso de Terceiros
-          </h3>
-          <p className="text-xs text-red-700">
-            Solicitações externas para uso do espaço.
-          </p>
-        </div>
-
-        <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
-          <h3 className="text-sm font-bold text-gray-800 mb-2 flex items-center">
-            <MapPin className="w-4 h-4 mr-2" />
-            Polos Ativos
-          </h3>
-          <p className="text-xs text-gray-700">
-            {equipamentos.length} equipamentos em {new Set(equipamentos.map(e => e.bairro)).size} bairros.
-          </p>
-        </div>
-      </div>
-
-      {/* Modal Nova Atividade */}
-      {showModal && (
+      {showNewModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
-            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-900">Nova Atividade Externa</h2>
-              <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-6 h-6" />
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="px-6 py-4 bg-emerald-600 flex items-center justify-between text-white">
+              <h3 className="text-lg font-bold">Novo Agendamento</h3>
+              <button onClick={() => setShowNewModal(false)} className="hover:bg-white/10 p-1 rounded-full text-white">
+                <Plus className="w-6 h-6 rotate-45" />
               </button>
             </div>
             
-            <form onSubmit={handleCreateActivity} className="p-6 space-y-4">
+            <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Título da Atividade</label>
                 <input
-                  required
-                  type="text"
-                  value={newActivity.titulo}
-                  onChange={e => setNewActivity({...newActivity, titulo: e.target.value})}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
-                  placeholder="Ex: Torneio de Vôlei"
+                  {...register('titulo')}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"
+                  placeholder="Ex: Treino de Vôlei Master"
                 />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Equipamento</label>
-                <select
-                  required
-                  value={newActivity.equipamento_id}
-                  onChange={e => setNewActivity({...newActivity, equipamento_id: e.target.value})}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
-                >
-                  <option value="">Selecione um equipamento</option>
-                  {equipamentos.map(eq => (
-                    <option key={eq.id} value={eq.id}>{eq.tipo} - {eq.bairro}</option>
-                  ))}
-                </select>
+                {errors.titulo && <p className="text-xs text-red-500 mt-1">{errors.titulo.message}</p>}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Dia da Semana</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Equipamento</label>
                   <select
-                    value={newActivity.dia_semana}
-                    onChange={e => setNewActivity({...newActivity, dia_semana: e.target.value})}
-                    className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                    {...register('equipamentoId')}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"
                   >
-                    {diasSemana.map(dia => (
-                      <option key={dia} value={dia}>{dia}</option>
+                    <option value="">Selecionar...</option>
+                    {equipamentos?.map(eq => (
+                      <option key={eq.id} value={eq.id}>{eq.bairro} ({eq.tipo})</option>
                     ))}
                   </select>
+                  {errors.equipamentoId && <p className="text-xs text-red-500 mt-1">{errors.equipamentoId.message}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
                   <select
-                    value={newActivity.tipo}
-                    onChange={e => setNewActivity({...newActivity, tipo: e.target.value as 'proprio' | 'terceiros'})}
-                    className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                    {...register('tipo')}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"
                   >
-                    <option value="proprio">Evento Próprio (Azul)</option>
-                    <option value="terceiros">Uso de Terceiros (Vermelho)</option>
+                    <option value="proprio">Próprio</option>
+                    <option value="terceiros">Terceiros/Intervenção</option>
                   </select>
                 </div>
               </div>
 
-              {newActivity.tipo === 'proprio' && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Data Inicial</label>
-                    <input
-                      type="date"
-                      value={newActivity.data_inicio}
-                      onChange={e => setNewActivity({...newActivity, data_inicio: e.target.value})}
-                      className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Data Final</label>
-                    <input
-                      type="date"
-                      value={newActivity.data_fim}
-                      onChange={e => setNewActivity({...newActivity, data_fim: e.target.value})}
-                      className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
-                    />
-                  </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Dia</label>
+                  <select
+                    {...register('diaSemana')}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"
+                  >
+                    {days.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
                 </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Início</label>
                   <input
                     type="time"
-                    value={newActivity.horario_inicio}
-                    onChange={e => setNewActivity({...newActivity, horario_inicio: e.target.value})}
-                    className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                    {...register('horarioInicio')}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Fim</label>
                   <input
                     type="time"
-                    value={newActivity.horario_fim}
-                    onChange={e => setNewActivity({...newActivity, horario_fim: e.target.value})}
-                    className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                    {...register('horarioFim')}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"
                   />
                 </div>
               </div>
@@ -634,25 +423,27 @@ export default function Agendamentos() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Descrição (Opcional)</label>
                 <textarea
-                  value={newActivity.descricao}
-                  onChange={e => setNewActivity({...newActivity, descricao: e.target.value})}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none h-20 resize-none"
+                  {...register('descricao')}
+                  rows={2}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none resize-none"
+                  placeholder="Informações adicionais..."
                 />
               </div>
 
-              <div className="pt-4 flex space-x-3">
+              <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
                 <button
                   type="button"
-                  onClick={() => setShowModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  onClick={() => setShowNewModal(false)}
+                  className="px-6 py-2 text-gray-600 font-medium hover:bg-gray-50 rounded-lg transition-colors"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-bold"
+                  disabled={isSubmitting}
+                  className="px-6 py-2 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-700 transition-colors shadow-sm disabled:opacity-50"
                 >
-                  Salvar
+                  {isSubmitting ? 'Salvando...' : 'Salvar Agendamento'}
                 </button>
               </div>
             </form>

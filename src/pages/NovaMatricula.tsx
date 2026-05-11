@@ -20,17 +20,70 @@ export default function NovaMatricula() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const [alunosRes, turmasRes] = await Promise.all([
-          supabase.from('alunos').select('id, nome, matricula').order('nome'),
-          supabase.from('turmas').select(`
+        const fetchTurmas = async () => {
+          const normalizeDay = (day: string) => {
+            if (!day) return '';
+            const d = day.trim().toLowerCase();
+            if (d.startsWith('seg')) return 'Segunda';
+            if (d.startsWith('ter')) return 'Terça';
+            if (d.startsWith('qua')) return 'Quarta';
+            if (d.startsWith('qui')) return 'Quinta';
+            if (d.startsWith('sex')) return 'Sexta';
+            if (d.startsWith('sab')) return 'Sábado';
+            if (d.startsWith('dom')) return 'Domingo';
+            return day;
+          };
+
+          let res = await supabase.from('turmas').select(`
             id,
             codigo,
             dias_semana,
             horario_inicio,
             horario_fim,
+            hora_inicio,
+            hora_fim,
             modalidades (nome),
-            equipamentos (bairro)
-          `).eq('status', 'Em Funcionamento')
+            equipamentos (bairro),
+            status
+          `).eq('status', 'Em Funcionamento');
+
+          if (res.error && (res.error.message.includes('status') || res.error.message.includes('schema cache'))) {
+            res = await supabase.from('turmas').select(`
+              id,
+              codigo,
+              dias_semana,
+              horario_inicio,
+              horario_fim,
+              hora_inicio,
+              hora_fim,
+              modalidades (nome),
+              equipamentos (bairro)
+            `);
+          }
+          if (res.data) {
+            res.data = res.data.map((t: any) => {
+              let dias = t.dias_semana;
+              if (typeof dias === 'string') {
+                dias = dias.replace(/{|}/g, '').split(',').map((s: string) => s.trim());
+              }
+              if (Array.isArray(dias)) {
+                dias = dias.map(normalizeDay);
+              }
+
+              return {
+                ...t,
+                horario_inicio: t.horario_inicio || t.hora_inicio || '00:00',
+                horario_fim: t.horario_fim || t.hora_fim || '00:00',
+                dias_semana: dias || []
+              };
+            });
+          }
+          return res;
+        };
+
+        const [alunosRes, turmasRes] = await Promise.all([
+          supabase.from('alunos').select('id, nome, matricula').order('nome'),
+          fetchTurmas()
         ]);
 
         if (alunosRes.error) throw alunosRes.error;

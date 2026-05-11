@@ -25,6 +25,8 @@ const alunoSchema = z.object({
   complemento: z.string().optional(),
   bairro: z.string().min(2, 'Bairro é obrigatório'),
   telefone: z.string().optional().or(z.literal('')),
+  nomeResponsavel: z.string().min(3, 'Nome do responsável é obrigatório').optional().or(z.literal('')),
+  cpfResponsavel: z.string().optional().or(z.literal('')),
   email: z.string().email('E-mail inválido').optional().or(z.literal('')),
   dataNascimento: z.string().min(10, 'Data de nascimento é obrigatória'),
   parQ: parQSchema,
@@ -81,10 +83,52 @@ export default function NovoAluno() {
       setIsLoading(true);
       try {
         // Fetch turmas
-        const { data: turmasData } = await supabase
-          .from('turmas')
-          .select('*, modalidades(nome), equipamentos(tipo)')
-          .eq('status', 'Em Funcionamento');
+          const fetchTurmas = async () => {
+            const normalizeDay = (day: string) => {
+              if (!day) return '';
+              const d = day.trim().toLowerCase();
+              if (d.startsWith('seg')) return 'Segunda';
+              if (d.startsWith('ter')) return 'Terça';
+              if (d.startsWith('qua')) return 'Quarta';
+              if (d.startsWith('qui')) return 'Quinta';
+              if (d.startsWith('sex')) return 'Sexta';
+              if (d.startsWith('sab')) return 'Sábado';
+              if (d.startsWith('dom')) return 'Domingo';
+              return day;
+            };
+
+            let res = await supabase
+              .from('turmas')
+              .select('*, modalidades(nome), equipamentos(tipo)')
+              .eq('status', 'Em Funcionamento');
+            
+            if (res.error && (res.error.message.includes('status') || res.error.message.includes('schema cache'))) {
+              res = await supabase.from('turmas').select('*, modalidades(nome), equipamentos(tipo)');
+            }
+
+            if (res.data) {
+              // Senior expert normalization
+              res.data = res.data.map((t: any) => {
+                let dias = t.dias_semana;
+                if (typeof dias === 'string') {
+                  dias = dias.replace(/{|}/g, '').split(',').map((s: string) => s.trim());
+                }
+                if (Array.isArray(dias)) {
+                  dias = dias.map(normalizeDay);
+                }
+
+                return {
+                  ...t,
+                  horario_inicio: t.horario_inicio || t.hora_inicio || '00:00',
+                  horario_fim: t.horario_fim || t.hora_fim || '00:00',
+                  dias_semana: dias || []
+                };
+              });
+            }
+            return res;
+          };
+        
+        const { data: turmasData } = await fetchTurmas();
         
         if (turmasData) setAvailableTurmas(turmasData);
 
@@ -98,19 +142,32 @@ export default function NovoAluno() {
           if (error) throw error;
 
           if (aluno) {
+            // Map saude_info if available, else try legacy columns
+            const saude = aluno.saude_info || {};
+            const q = {
+              q1: String(saude.q1 ?? aluno.par_q_1 ?? 'false'),
+              q2: String(saude.q2 ?? aluno.par_q_2 ?? 'false'),
+              q3: String(saude.q3 ?? aluno.par_q_3 ?? 'false'),
+              q4: String(saude.q4 ?? aluno.par_q_4 ?? 'false'),
+              q5: String(saude.q5 ?? aluno.par_q_5 ?? 'false'),
+              q6: String(saude.q6 ?? aluno.par_q_6 ?? 'false'),
+              q7: String(saude.q7 ?? aluno.par_q_7 ?? 'false'),
+            };
+
             reset({
               nome: aluno.nome,
               dataNascimento: aluno.data_nascimento,
               bairro: aluno.bairro,
-              telefone: aluno.telefone_responsavel,
+              telefone: aluno.telefone_responsavel || aluno.telefone || '',
+              nomeResponsavel: aluno.nome_responsavel || '',
+              cpfResponsavel: aluno.cpf_responsavel || '',
               cep: aluno.cep || '',
               endereco: aluno.endereco || '',
               email: aluno.email || '',
               turmas: aluno.matriculas?.map((m: any) => m.turma_id) || [],
-              parQ: {
-                q1: 'false', q2: 'false', q3: 'false', q4: 'false', q5: 'false', q6: 'false', q7: 'false'
-              },
+              parQ: q,
               termoVeracidade: true,
+              termoResponsabilidade: aluno.termo_responsabilidade_aceito || false,
             });
             if (aluno.foto_url) setFotoUrl(aluno.foto_url);
           }
@@ -139,16 +196,41 @@ export default function NovoAluno() {
 
   const onSubmit = async (data: AlunoFormData) => {
     try {
-      const alunoData = {
+      // Senior expert: Consistent data mapping
+      const parQJson = {
+        q1: data.parQ.q1 === 'true',
+        q2: data.parQ.q2 === 'true',
+        q3: data.parQ.q3 === 'true',
+        q4: data.parQ.q4 === 'true',
+        q5: data.parQ.q5 === 'true',
+        q6: data.parQ.q6 === 'true',
+        q7: data.parQ.q7 === 'true',
+      };
+
+      const alunoData: any = {
         nome: data.nome,
         data_nascimento: data.dataNascimento,
         cep: data.cep,
         endereco: data.endereco,
         complemento: data.complemento,
         bairro: data.bairro,
-        telefone_responsavel: data.telefone || null,
         email: data.email || null,
         foto_url: fotoUrl,
+        nome_responsavel: data.nomeResponsavel || null,
+        cpf_responsavel: data.cpfResponsavel || null,
+        telefone_responsavel: data.telefone || null,
+        telefone: data.telefone || null,
+        saude_info: parQJson,
+        termo_responsabilidade_aceito: data.termoResponsabilidade || false,
+        termo_veracidade_aceito: data.termoVeracidade || true,
+        // Legacy support
+        par_q_1: parQJson.q1,
+        par_q_2: parQJson.q2,
+        par_q_3: parQJson.q3,
+        par_q_4: parQJson.q4,
+        par_q_5: parQJson.q5,
+        par_q_6: parQJson.q6,
+        par_q_7: parQJson.q7,
       };
 
       let alunoId = id;
@@ -315,7 +397,7 @@ export default function NovoAluno() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
             <div className="space-y-2">
               <label className="block text-sm font-medium text-gray-700">Nome Completo</label>
-              <input {...register('nome')} className="w-full px-3 py-2 border rounded-md focus:ring-emerald-500 focus:border-emerald-500" />
+              <input {...register('nome')} placeholder="Ex: João Silva" className="w-full px-3 py-2 border rounded-md focus:ring-emerald-500 focus:border-emerald-500" />
               {errors.nome && <p className="text-red-500 text-xs">{errors.nome.message}</p>}
             </div>
             
@@ -327,36 +409,55 @@ export default function NovoAluno() {
 
             <div className="space-y-2">
               <label className="block text-sm font-medium text-gray-700">E-mail (Opcional)</label>
-              <input type="email" {...register('email')} className="w-full px-3 py-2 border rounded-md focus:ring-emerald-500 focus:border-emerald-500" />
+              <input type="email" {...register('email')} placeholder="email@exemplo.com" className="w-full px-3 py-2 border rounded-md focus:ring-emerald-500 focus:border-emerald-500" />
               {errors.email && <p className="text-red-500 text-xs">{errors.email.message}</p>}
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Telefone (Opcional)</label>
-              <input {...register('telefone')} className="w-full px-3 py-2 border rounded-md focus:ring-emerald-500 focus:border-emerald-500" />
-              {errors.telefone && <p className="text-red-500 text-xs">{errors.telefone.message}</p>}
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
             <div className="space-y-2">
               <label className="block text-sm font-medium text-gray-700">CEP</label>
-              <input {...register('cep')} className="w-full px-3 py-2 border rounded-md focus:ring-emerald-500 focus:border-emerald-500" />
+              <input {...register('cep')} placeholder="00000-000" className="w-full px-3 py-2 border rounded-md focus:ring-emerald-500 focus:border-emerald-500" />
               {errors.cep && <p className="text-red-500 text-xs">{errors.cep.message}</p>}
             </div>
             <div className="space-y-2 md:col-span-2">
               <label className="block text-sm font-medium text-gray-700">Endereço</label>
-              <input {...register('endereco')} className="w-full px-3 py-2 border rounded-md focus:ring-emerald-500 focus:border-emerald-500" />
+              <input {...register('endereco')} placeholder="Rua, Número, Apto..." className="w-full px-3 py-2 border rounded-md focus:ring-emerald-500 focus:border-emerald-500" />
               {errors.endereco && <p className="text-red-500 text-xs">{errors.endereco.message}</p>}
             </div>
             <div className="space-y-2 md:col-span-2">
               <label className="block text-sm font-medium text-gray-700">Complemento</label>
-              <input {...register('complemento')} className="w-full px-3 py-2 border rounded-md focus:ring-emerald-500 focus:border-emerald-500" />
+              <input {...register('complemento')} placeholder="Opcional" className="w-full px-3 py-2 border rounded-md focus:ring-emerald-500 focus:border-emerald-500" />
             </div>
             <div className="space-y-2">
               <label className="block text-sm font-medium text-gray-700">Bairro</label>
-              <input {...register('bairro')} className="w-full px-3 py-2 border rounded-md focus:ring-emerald-500 focus:border-emerald-500" />
+              <input {...register('bairro')} placeholder="Ex: Centro" className="w-full px-3 py-2 border rounded-md focus:ring-emerald-500 focus:border-emerald-500" />
               {errors.bairro && <p className="text-red-500 text-xs">{errors.bairro.message}</p>}
+            </div>
+          </div>
+        </div>
+
+        {/* Informações do Responsável */}
+        <div className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-gray-100 space-y-6">
+          <div className="flex items-center justify-between border-b pb-2">
+            <h2 className="text-lg font-semibold text-gray-900 font-bold">Informações do Responsável</h2>
+            <p className="text-xs text-gray-400 uppercase tracking-widest font-black">Obrigatório para menores</p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-700">Nome do Responsável</label>
+              <input {...register('nomeResponsavel')} placeholder="Nome completo" className="w-full px-3 py-2 border rounded-md focus:ring-emerald-500 focus:border-emerald-500" />
+              {errors.nomeResponsavel && <p className="text-red-500 text-xs">{errors.nomeResponsavel.message}</p>}
+            </div>
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-700">Telefone do Responsável</label>
+              <input {...register('telefone')} placeholder="(00) 00000-0000" className="w-full px-3 py-2 border rounded-md focus:ring-emerald-500 focus:border-emerald-500" />
+              {errors.telefone && <p className="text-red-500 text-xs">{errors.telefone.message}</p>}
+            </div>
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-700">CPF do Responsável</label>
+              <input {...register('cpfResponsavel')} placeholder="000.000.000-00" className="w-full px-3 py-2 border rounded-md focus:ring-emerald-500 focus:border-emerald-500" />
             </div>
           </div>
         </div>
@@ -378,7 +479,7 @@ export default function NovoAluno() {
                   <div className="flex-1">
                     <div className="text-sm font-medium text-gray-900">{turma.modalidades?.nome}</div>
                     <div className="text-xs text-gray-500">
-                      {turma.equipamentos?.tipo} - {turma.dias_semana.join(', ')} ({turma.hora_inicio})
+                      {turma.equipamentos?.tipo} - {turma.dias_semana.join(', ')} ({turma.horario_inicio})
                     </div>
                   </div>
                 </label>

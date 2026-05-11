@@ -3,12 +3,16 @@ import { Link } from 'react-router-dom';
 import { Plus, Search, Trash2, Edit, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { useNotification } from '../components/Notification';
+import { ConfirmationModal } from '../components/ConfirmationModal';
 
 export default function Alunos() {
   const queryClient = useQueryClient();
+  const { showNotification } = useNotification();
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
 
   const { data: alunos, isLoading } = useQuery({
     queryKey: ['alunos'],
@@ -29,27 +33,34 @@ export default function Alunos() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['alunos'] });
+      showNotification('success', 'Aluno excluído com sucesso!');
+      setItemToDelete(null);
+    },
+    onError: (error: any) => {
+      console.error('Erro ao excluir aluno:', error);
+      setItemToDelete(null);
+      showNotification('error', 'Não foi possível excluir o aluno. Ele pode estar vinculado a matrículas ativas.');
     }
   });
 
   const handleDelete = (id: string) => {
-    if (window.confirm('Tem certeza que deseja excluir este aluno?')) {
-      deleteMutation.mutate(id);
-    }
+    setItemToDelete(id);
   };
 
   const handleExportCSV = () => {
     if (!alunos || alunos.length === 0) return;
     
-    const headers = ['Matrícula', 'Nome', 'Data Nascimento', 'Bairro', 'Telefone'];
+    const headers = ['Matrícula', 'Nome', 'Responsável', 'Telefone', 'E-mail', 'Data Nascimento', 'Bairro'];
     const csvContent = [
       headers.join(','),
       ...alunos.map(a => [
         a.matricula,
         `"${a.nome}"`,
+        `"${a.nome_responsavel || ''}"`,
+        `"${a.telefone_responsavel || a.telefone || ''}"`,
+        `"${a.email || ''}"`,
         a.data_nascimento || '',
-        `"${a.bairro || ''}"`,
-        `"${a.telefone_responsavel || ''}"`
+        `"${a.bairro || ''}"`
       ].join(','))
     ].join('\n');
 
@@ -141,7 +152,14 @@ export default function Alunos() {
                   <tr key={aluno.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 font-mono text-sm text-gray-600 hidden sm:table-cell">{aluno.matricula}</td>
                     <td className="px-6 py-4 font-medium text-gray-900">
-                      {aluno.nome}
+                      <div className="flex flex-col">
+                        <span>{aluno.nome}</span>
+                        {aluno.nome_responsavel && (
+                          <span className="text-[10px] text-gray-400 uppercase font-bold tracking-tight">
+                            Resp: {aluno.nome_responsavel}
+                          </span>
+                        )}
+                      </div>
                       <div className="sm:hidden text-xs text-gray-500 mt-1 font-mono">
                         {aluno.matricula}
                       </div>
@@ -203,6 +221,16 @@ export default function Alunos() {
           </div>
         )}
       </div>
+      {/* Modal de Confirmação */}
+      <ConfirmationModal
+        isOpen={Boolean(itemToDelete)}
+        onClose={() => setItemToDelete(null)}
+        onConfirm={() => itemToDelete && deleteMutation.mutate(itemToDelete)}
+        title="Excluir Aluno"
+        message="Tem certeza que deseja excluir este aluno? Todas as suas matrículas arquivadas e histórico serão removidos permanentemente."
+        confirmText="Excluir"
+        isLoading={deleteMutation.isPending}
+      />
     </div>
   );
 }

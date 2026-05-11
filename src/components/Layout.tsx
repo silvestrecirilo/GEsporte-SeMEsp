@@ -35,7 +35,20 @@ export default function Layout({ onDemoLogout }: { onDemoLogout?: () => void }) 
           .single();
         
         if (funcionario) {
-          setUserPermissions(funcionario.permissoes || []);
+          const perms = funcionario.permissoes || [];
+          // Ensure 'agendamentos' is present if they have 'dashboard' or 'turmas'
+          // This fixes visibility for existing users before their DB record is updated
+          if ((perms.includes('dashboard') || perms.includes('turmas')) && !perms.includes('agendamentos')) {
+            perms.push('agendamentos');
+          }
+          setUserPermissions(perms);
+        } else {
+          // Fallback permissions for newly authenticated users NOT in funcionarios table yet
+          setUserPermissions([
+            'dashboard', 'alunos', 'turmas', 'frequencia', 
+            'equipamentos', 'modalidades', 'relatorios', 
+            'agendamentos', 'funcionarios'
+          ]);
         }
       }
       setLoading(false);

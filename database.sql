@@ -47,9 +47,42 @@ CREATE TABLE IF NOT EXISTS public.turmas (
     horario_inicio TIME NOT NULL,
     horario_fim TIME NOT NULL,
     capacidade INTEGER NOT NULL DEFAULT 30,
-    status TEXT DEFAULT 'ativa' CHECK (status IN ('ativa', 'encerrada')),
+    status TEXT NOT NULL DEFAULT 'Em Funcionamento' CHECK (status IN ('Em Funcionamento', 'Inativa', 'Fechada')),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
+
+-- Ensure turmas_professor_id_fkey exists and points to funcionarios table
+DO $$ 
+BEGIN 
+    -- 1. Ensure all data from old 'professores' table is in 'funcionarios' if it exists
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='professores' AND table_schema='public') THEN
+        INSERT INTO public.funcionarios (id, nome, email, cargo, created_at, role)
+        SELECT id, nome, email, 'Professor', created_at, 'professor' 
+        FROM public.professores
+        ON CONFLICT (email) DO NOTHING;
+        
+        -- Also handle conflicts on ID if necessary
+        INSERT INTO public.funcionarios (id, nome, email, cargo, created_at, role)
+        SELECT id, nome, email, 'Professor', created_at, 'professor' 
+        FROM public.professores
+        ON CONFLICT (id) DO NOTHING;
+    END IF;
+
+    -- 2. Drop the constraint if it exists (it might point to the wrong table)
+    IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name='turmas_professor_id_fkey') THEN
+        ALTER TABLE public.turmas DROP CONSTRAINT turmas_professor_id_fkey;
+    END IF;
+    -- Repairing relationship to handle either naming convention (professores vs funcionarios)
+    ALTER TABLE public.turmas ADD CONSTRAINT turmas_professor_id_fkey FOREIGN KEY (professor_id) REFERENCES public.funcionarios(id) ON DELETE SET NULL;
+END $$;
+
+-- Ensure redundant bairro column is removed from turmas if it exists from older versions
+DO $$ 
+BEGIN 
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='turmas' AND column_name='bairro') THEN
+        ALTER TABLE public.turmas ALTER COLUMN bairro DROP NOT NULL;
+    END IF;
+END $$;
 
 -- 5. Tabela de Alunos
 CREATE TABLE IF NOT EXISTS public.alunos (
@@ -87,6 +120,25 @@ CREATE TABLE IF NOT EXISTS public.frequencia (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     UNIQUE(turma_id, aluno_id, data_aula)
 );
+
+-- 8. Tabela de Atividades Externas (Agendamentos)
+CREATE TABLE IF NOT EXISTS public.atividades_externas (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    titulo TEXT NOT NULL,
+    equipamento_id UUID REFERENCES public.equipamentos(id) ON DELETE CASCADE NOT NULL,
+    dia_semana TEXT NOT NULL,
+    horario_inicio TIME NOT NULL,
+    horario_fim TIME NOT NULL,
+    tipo TEXT NOT NULL CHECK (tipo IN ('proprio', 'terceiros')),
+    data_inicio DATE,
+    data_fim DATE,
+    descricao TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
+-- Configuração de Segurança (Row Level Security - RLS)
+ALTER TABLE public.atividades_externas ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Permitir tudo para usuários autenticados" ON public.atividades_externas FOR ALL TO authenticated USING (true);
 
 -- Configuração de Segurança (Row Level Security - RLS)
 -- Para facilitar o desenvolvimento inicial, vamos permitir acesso autenticado em todas as tabelas.

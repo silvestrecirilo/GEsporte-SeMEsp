@@ -94,35 +94,62 @@ export default function Frequencia() {
 
       try {
         // 1. Fetch Turma details
-        const { data: turmaData, error: turmaError } = await supabase
-          .from('turmas')
-          .select(`
-            id,
-            codigo,
-            dias_semana,
-            hora_inicio,
-            hora_fim,
-            modalidades (nome),
-            equipamentos (bairro),
-            professores:professor_id (nome)
-          `)
-          .eq('id', id)
-          .single();
+          const { data: turmaData, error: turmaError } = await supabase
+            .from('turmas')
+            .select(`
+              id,
+              codigo,
+              dias_semana,
+              horario_inicio,
+              horario_fim,
+              hora_inicio,
+              hora_fim,
+              modalidades (nome),
+              equipamentos (bairro),
+              professores:funcionarios!professor_id (nome)
+            `)
+            .eq('id', id)
+            .single();
 
-        if (turmaError) throw turmaError;
+          if (turmaError) throw turmaError;
 
-        if (turmaData) {
-          const data = turmaData as any;
-          const dias = Array.isArray(data.dias_semana) ? data.dias_semana : [data.dias_semana];
-          setTurma({
-            id: data.id,
-            codigo: data.codigo || '',
-            modalidade: data.modalidades?.nome || 'Desconhecida',
-            bairro: data.equipamentos?.bairro || 'Desconhecido',
-            professor: data.professores?.nome || 'Não atribuído',
-            horario: `${dias.join(', ')} - ${data.hora_inicio} às ${data.hora_fim}`,
-            diasSemana: dias
-          });
+          if (turmaData) {
+            const data = turmaData as any;
+            const h_inicio = data.horario_inicio || data.hora_inicio || '00:00';
+            const h_fim = data.horario_fim || data.hora_fim || '00:00';
+
+            const normalizeDay = (day: string) => {
+              if (!day) return '';
+              const d = day.trim().toLowerCase();
+              if (d.startsWith('seg')) return 'Segunda';
+              if (d.startsWith('ter')) return 'Terça';
+              if (d.startsWith('qua')) return 'Quarta';
+              if (d.startsWith('qui')) return 'Quinta';
+              if (d.startsWith('sex')) return 'Sexta';
+              if (d.startsWith('sab')) return 'Sábado';
+              if (d.startsWith('dom')) return 'Domingo';
+              return day;
+            };
+
+            let dias = data.dias_semana;
+            if (typeof dias === 'string') {
+              dias = dias.replace(/{|}/g, '').split(',').map((s: string) => s.trim());
+            }
+            if (Array.isArray(dias)) {
+              dias = dias.map(normalizeDay);
+            } else {
+              dias = [dias].filter(Boolean).map(normalizeDay);
+            }
+            
+            setTurma({
+              id: data.id,
+              codigo: data.codigo || '',
+              modalidade: data.modalidades?.nome || 'Desconhecida',
+              bairro: data.equipamentos?.bairro || 'Desconhecido',
+              professor: data.professores?.nome || 'Não atribuído',
+              horario: `${dias.join(', ')} - ${h_inicio} às ${h_fim}`,
+              diasSemana: dias
+            });
 
           const validDates = getValidDates(dias);
           setDatasDisponiveis(validDates);

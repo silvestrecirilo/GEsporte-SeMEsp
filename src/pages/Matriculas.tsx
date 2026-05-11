@@ -28,6 +28,8 @@ export default function Matriculas() {
             dias_semana,
             horario_inicio,
             horario_fim,
+            hora_inicio,
+            hora_fim,
             modalidades (nome),
             equipamentos (bairro)
           )
@@ -35,7 +37,44 @@ export default function Matriculas() {
         .order('data_matricula', { ascending: false });
 
       if (error) throw error;
-      setMatriculas(data || []);
+      
+      // Senior expert normalization
+      const normalizeDay = (day: string) => {
+        if (!day) return '';
+        const d = day.trim().toLowerCase();
+        if (d.startsWith('seg')) return 'Segunda';
+        if (d.startsWith('ter')) return 'Terça';
+        if (d.startsWith('qua')) return 'Quarta';
+        if (d.startsWith('qui')) return 'Quinta';
+        if (d.startsWith('sex')) return 'Sexta';
+        if (d.startsWith('sab')) return 'Sábado';
+        if (d.startsWith('dom')) return 'Domingo';
+        return day;
+      };
+
+      const mappedData = (data || []).map((m: any) => {
+        if (!m.turmas) return m;
+
+        let dias = m.turmas.dias_semana;
+        if (typeof dias === 'string') {
+          dias = dias.replace(/{|}/g, '').split(',').map((s: string) => s.trim());
+        }
+        if (Array.isArray(dias)) {
+          dias = dias.map(normalizeDay);
+        }
+
+        return {
+          ...m,
+          turmas: {
+            ...m.turmas,
+            horario_inicio: m.turmas.horario_inicio || m.turmas.hora_inicio || '00:00',
+            horario_fim: m.turmas.horario_fim || m.turmas.hora_fim || '00:00',
+            dias_semana: dias || []
+          }
+        };
+      });
+      
+      setMatriculas(mappedData);
     } catch (error) {
       console.error('Erro ao buscar matrículas:', error);
     } finally {

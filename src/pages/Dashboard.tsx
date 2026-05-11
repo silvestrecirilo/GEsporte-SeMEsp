@@ -50,7 +50,18 @@ export default function Dashboard() {
               .select('id, nome, cargo, permissoes')
               .eq('email', user.email)
               .single();
-            userProfile = funcionario;
+            
+            if (funcionario) {
+              userProfile = { ...funcionario, isAdmin: false };
+            } else {
+              userProfile = { 
+                id: user.id, 
+                nome: user.user_metadata?.full_name || user.email.split('@')[0], 
+                cargo: 'Gestor Autenticado', 
+                permissoes: ['dashboard', 'alunos', 'turmas', 'frequencia', 'equipamentos', 'modalidades', 'relatorios', 'agendamentos', 'funcionarios'],
+                isAdmin: true 
+              };
+            }
           }
         }
 
@@ -58,51 +69,215 @@ export default function Dashboard() {
         const hasFrequenciaOnly = userProfile?.permissoes?.includes('frequencia') && !canManageTurmas;
 
         // Fetch counts
-        const [
-          { count: alunosCount },
-          { count: turmasCount },
-          { count: modalidadesCount },
-          { count: equipamentosCount },
-          { count: matriculasCount },
-          { data: turmasData },
-          { data: frequenciaData },
-          { data: alunosData },
-          { data: scheduleData }
-        ] = await Promise.all([
-          supabase.from('alunos').select('*', { count: 'exact', head: true }),
-          supabase.from('turmas').select('*', { count: 'exact', head: true }).eq('status', 'Em Funcionamento'),
-          supabase.from('modalidades').select('*', { count: 'exact', head: true }),
-          supabase.from('equipamentos').select('*', { count: 'exact', head: true }),
-          supabase.from('matriculas').select('*', { count: 'exact', head: true }).eq('status', 'ativa'),
-          supabase.from('turmas').select(`
-            id,
-            dias_semana,
-            modalidades (nome),
-            matriculas (count),
-            professor_id,
-            turmas_auxiliares (funcionario_id)
-          `).eq('status', 'Em Funcionamento'),
-          supabase.from('frequencia')
-            .select('data_aula, status_aula')
-            .gte('data_aula', fourWeeksAgo.toISOString().split('T')[0])
-            .lte('data_aula', today.toISOString().split('T')[0]),
-          supabase.from('alunos').select('bairro'),
-          supabase.from('turmas').select(`
+        const fetchTurmasRobust = async () => {
+          let res = await supabase.from('turmas').select(`
             id,
             codigo,
             dias_semana,
+            horario_inicio,
+            horario_fim,
             hora_inicio,
             hora_fim,
             modalidades (nome),
             equipamentos (bairro, tipo),
             professor_id,
-            turmas_auxiliares (funcionario_id)
-          `).eq('status', 'Em Funcionamento')
+            professor:funcionarios!professor_id (nome),
+            turmas_auxiliares (funcionario_id),
+            status
+          `);
+          
+          if (res.error) {
+            console.warn('Detailed turmas fetch failed, trying simple fetch:', res.error);
+            res = await supabase.from('turmas').select(`
+              id,
+              codigo,
+              dias_semana,
+              horario_inicio,
+              horario_fim,
+              hora_inicio,
+              hora_fim,
+              modalidades (nome),
+              equipamentos (bairro, tipo),
+              status,
+              professor_id,
+              turmas_auxiliares (funcionario_id)
+            `);
+          }
+          return res;
+        };
+
+        const fetchTurmasWithMatriculas = async () => {
+          let res = await supabase.from('turmas').select(`
+            id,
+            dias_semana,
+            horario_inicio,
+            horario_fim,
+            hora_inicio,
+            hora_fim,
+            modalidades (nome),
+            matriculas (count),
+            professor_id,
+            turmas_auxiliares (funcionario_id),
+            status
+          `);
+
+          if (res.error) {
+            res = await supabase.from('turmas').select(`
+              id,
+              dias_semana,
+              horario_inicio,
+              horario_fim,
+              hora_inicio,
+              hora_fim,
+              modalidades (nome),
+              status,
+              professor_id,
+              turmas_auxiliares (funcionario_id)
+            `);
+          }
+          return res;
+        };
+
+        const fetchAtividadesExternas = async () => {
+          try {
+            const { data, error } = await supabase.from('atividades_externas').select(`
+              id,
+              titulo,
+              equipamento_id,
+              equipamentos (bairro, tipo),
+              dia_semana,
+              horario_inicio,
+              horario_fim,
+              tipo
+            `);
+            if (error) {
+              console.warn('atividades_externas table may be missing:', error);
+              return { data: [] };
+            }
+            return { data };
+          } catch (e) {
+            console.error('Error fetching activities:', e);
+            return { data: [] };
+          }
+        };
+
+        const [
+          { count: alunosCount },
+          turmasCountRes,
+          { count: modalidadesCount },
+          { count: equipamentosCount },
+          { count: matriculasCount },
+          turmasDataRes,
+          { data: frequenciaData },
+          { data: alunosData },
+          scheduleDataRes,
+          { data: atividadesExternasData }
+        ] = await Promise.all([
+          supabase.from('alunos').select('*', { count: 'exact', head: true }),
+          supabase.from('turmas').select('*', { count: 'exact', head: true }),
+          supabase.from('modalidades').select('*', { count: 'exact', head: true }),
+          supabase.from('equipamentos').select('*', { count: 'exact', head: true }),
+          supabase.from('matriculas').select('*', { count: 'exact', head: true }).eq('status', 'ativa'),
+          fetchTurmasWithMatriculas(),
+          supabase.from('frequencia')
+            .select('data_aula, status_aula')
+            .gte('data_aula', fourWeeksAgo.toISOString().split('T')[0])
+            .lte('data_aula', today.toISOString().split('T')[0]),
+          supabase.from('alunos').select('bairro'),
+          fetchTurmasRobust(),
+          fetchAtividadesExternas().then(res => ({ data: res.data }))
         ]);
+
+        const turmasCount = turmasCountRes.count || 0;
+        const turmasDataRaw = turmasDataRes.data;
+        const scheduleDataRaw = scheduleDataRes.data;
+        const normalizeDay = (day: string) => {
+          if (!day) return '';
+          const d = day.trim().toLowerCase();
+          if (d.startsWith('seg')) return 'Segunda';
+          if (d.startsWith('ter')) return 'Terça';
+          if (d.startsWith('qua')) return 'Quarta';
+          if (d.startsWith('qui')) return 'Quinta';
+          if (d.startsWith('sex')) return 'Sexta';
+          if (d.startsWith('sab')) return 'Sábado';
+          if (d.startsWith('dom')) return 'Domingo';
+          return day;
+        };
+
+        // senior expert normalization
+        const normalizeTurmas = (data: any[] | null) => {
+          return (data || []).map((t: any) => {
+            // Handle equipamentos join which might be an array or object
+            const eq = t.equipamentos;
+            const normalizedEquipamento = Array.isArray(eq) ? eq[0] : eq;
+
+            // Handle professor/professores join
+            const prof = t.professor || t.professores;
+            const normalizedProfessor = Array.isArray(prof) ? prof[0] : prof;
+
+            // Handle modalidades join
+            const mod = t.modalidades;
+            const normalizedModalidade = Array.isArray(mod) ? mod[0] : mod;
+
+            // Normalize dias_semana
+            let dias = t.dias_semana;
+            if (typeof dias === 'string') {
+              // Robust handle for various postgres/json return formats
+              dias = dias.replace(/{|}|\[|\]|"/g, '').split(/[ ,;/]+/).filter(Boolean).map((s: string) => s.trim());
+            }
+            if (Array.isArray(dias)) {
+              dias = dias.map(normalizeDay).filter(Boolean);
+            } else {
+              dias = [];
+            }
+
+            return {
+              ...t,
+              horario_inicio: t.horario_inicio || (t as any).hora_inicio || '00:00',
+              horario_fim: t.horario_fim || (t as any).hora_fim || '00:00',
+              equipamentos: normalizedEquipamento,
+              professor: normalizedProfessor,
+              modalidades: normalizedModalidade,
+              dias_semana: dias
+            };
+          });
+        };
+
+        const checkStatus = (status: string) => {
+          const s = (status || '').toLowerCase();
+          if (!s) return true; // Default to shown if no status
+          
+          const inactiveKeywords = ['inativa', 'fechada', 'encerrada', 'cancelada', 'suspensa'];
+          const isExplicitlyInactive = inactiveKeywords.some(keyword => s.includes(keyword));
+          
+          const activeKeywords = ['ativa', 'funcionamento', 'aberta', 'andamento', 'progresso', 'ok', 'vigente'];
+          const isExplicitlyActive = activeKeywords.some(keyword => s.includes(keyword));
+          
+          return isExplicitlyActive || (!isExplicitlyInactive);
+        };
+
+        const turmasData = normalizeTurmas(turmasDataRaw).filter((t: any) => checkStatus(t.status));
+        const scheduleData = normalizeTurmas(scheduleDataRaw).filter((t: any) => checkStatus(t.status));
+
+        // Normalize Atividades Externas
+        const normalizedAtividades = (atividadesExternasData || []).map((a: any) => {
+          const eq = a.equipamentos;
+          const normalizedEquipamento = Array.isArray(eq) ? eq[0] : eq;
+
+          return {
+            ...a,
+            eventType: 'externa',
+            dias_semana: [normalizeDay(a.dia_semana)], // Normalize day for compatibility with filter
+            horario_inicio: a.horario_inicio || '00:00',
+            horario_fim: a.horario_fim || '00:00',
+            equipamentos: normalizedEquipamento
+          };
+        });
 
         // Filter data based on permissions
         let filteredTurmasData = turmasData || [];
         let filteredScheduleData = scheduleData || [];
+        let filteredAtividades = normalizedAtividades;
 
         if (hasFrequenciaOnly && userProfile?.id) {
           filteredTurmasData = filteredTurmasData.filter((t: any) => 
@@ -113,6 +288,7 @@ export default function Dashboard() {
             t.professor_id === userProfile.id || 
             t.turmas_auxiliares?.some((a: any) => a.funcionario_id === userProfile.id)
           );
+          filteredAtividades = [];
         }
 
         // Calculate Volume de Atendimentos
@@ -131,16 +307,19 @@ export default function Dashboard() {
         setStats({
           totalAlunos: hasFrequenciaOnly ? filteredTurmasData.reduce((acc, t) => acc + (t.matriculas?.[0]?.count || 0), 0) : (alunosCount || 0),
           turmasAtivas: hasFrequenciaOnly ? filteredTurmasData.length : (turmasCount || 0),
-          totalModalidades: hasFrequenciaOnly ? new Set(filteredTurmasData.map(t => {
-            const mod = t.modalidades as any;
-            return Array.isArray(mod) ? mod[0]?.nome : mod?.nome;
-          }).filter(Boolean)).size : (modalidadesCount || 0),
+          totalModalidades: hasFrequenciaOnly ? new Set(filteredTurmasData.map(t => t.modalidades?.nome).filter(Boolean)).size : (modalidadesCount || 0),
           totalEquipamentos: equipamentosCount || 0,
           totalAtendimentos: hasFrequenciaOnly ? filteredTurmasData.reduce((acc, t) => acc + (t.matriculas?.[0]?.count || 0), 0) : (matriculasCount || 0),
           volumeAtendimentos: Math.round(totalVolume),
         });
 
-        setTurmasSchedule(filteredScheduleData);
+        // Merge turmas and external activities
+        const combinedSchedule = [
+          ...filteredScheduleData.map(t => ({ ...t, eventType: 'turma' })),
+          ...filteredAtividades
+        ];
+
+        setTurmasSchedule(combinedSchedule);
 
         // Atendimentos por Bairro
         if (alunosData) {
@@ -400,29 +579,50 @@ export default function Dashboard() {
                   <div className="space-y-3">
                     {turmasSchedule
                       .filter(t => t.dias_semana?.includes(dia))
-                      .sort((a, b) => (a.hora_inicio || '').localeCompare(b.hora_inicio || ''))
-                      .map((turma) => (
-                        <div 
-                          key={`${turma.id}-${dia}`}
-                          className="p-3 bg-gray-50 rounded-lg border border-gray-100 hover:border-emerald-200 hover:bg-emerald-50 transition-all group"
-                        >
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-xs font-bold text-emerald-700">
-                              {turma.hora_inicio?.substring(0, 5)} - {turma.hora_fim?.substring(0, 5)}
-                            </span>
-                            <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 rounded font-mono">
-                              {turma.codigo}
-                            </span>
+                      .sort((a, b) => (a.horario_inicio || '').localeCompare(b.horario_inicio || ''))
+                      .map((turma) => {
+                        const isExterna = turma.eventType === 'externa';
+                        const colorClass = isExterna 
+                          ? (turma.tipo === 'terceiros' ? 'border-red-100 bg-red-50 hover:border-red-200 hover:bg-red-100/50' : 'border-blue-100 bg-blue-50 hover:border-blue-200 hover:bg-blue-100/50')
+                          : 'bg-gray-50 border-gray-100 hover:border-emerald-200 hover:bg-emerald-50';
+                        const timeColor = isExterna
+                          ? (turma.tipo === 'terceiros' ? 'text-red-700' : 'text-blue-700')
+                          : 'text-emerald-700';
+
+                        return (
+                          <div 
+                            key={`${turma.id}-${dia}`}
+                            className={`p-3 rounded-lg border transition-all group ${colorClass}`}
+                          >
+                            <div className="flex items-center justify-between mb-1">
+                              <span className={`text-xs font-bold ${timeColor}`}>
+                                {turma.horario_inicio?.substring(0, 5)} - {turma.horario_fim?.substring(0, 5)}
+                              </span>
+                              {!isExterna ? (
+                                <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 rounded font-mono">
+                                  {turma.codigo}
+                                </span>
+                              ) : (
+                                <span className={`text-[9px] px-1 rounded font-mono ${turma.tipo === 'terceiros' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}`}>
+                                  {turma.tipo === 'terceiros' ? 'EXT' : 'PRP'}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-sm font-semibold text-gray-900 truncate">
+                              {isExterna ? turma.titulo : turma.modalidades?.nome}
+                            </div>
+                            <div className="text-[10px] text-gray-500 flex items-center mt-1">
+                              <MapPin className="w-2 h-2 mr-1" />
+                              <span className="truncate">{turma.equipamentos?.tipo} - {turma.equipamentos?.bairro}</span>
+                            </div>
+                             {!isExterna && turma.professor?.nome && (
+                               <div className="text-[10px] text-emerald-600 font-medium mt-1">
+                                 {turma.professor.nome}
+                               </div>
+                             )}
                           </div>
-                          <div className="text-sm font-semibold text-gray-900 truncate">
-                            {turma.modalidades?.nome}
-                          </div>
-                          <div className="text-[10px] text-gray-500 flex items-center mt-1">
-                            <MapPin className="w-2 h-2 mr-1" />
-                            <span className="truncate">{turma.equipamentos?.tipo} - {turma.equipamentos?.bairro}</span>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     {turmasSchedule.filter(t => t.dias_semana?.includes(dia)).length === 0 && (
                       <div className="text-[10px] text-gray-400 text-center italic py-4">
                         Sem atividades

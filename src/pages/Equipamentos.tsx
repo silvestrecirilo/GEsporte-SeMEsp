@@ -116,7 +116,7 @@ export default function Equipamentos() {
                     <td className="px-6 py-4 text-gray-600 hidden md:table-cell">{equipamento.endereco}</td>
                     <td className="px-6 py-4 text-right">
                       <Link 
-                        to={`/equipamentos/editar/${equipamento.id}`}
+                        to={`/equipamentos/${equipamento.id}/editar`}
                         className="text-emerald-600 hover:text-emerald-800 font-medium text-sm mr-3"
                       >
                         Editar
